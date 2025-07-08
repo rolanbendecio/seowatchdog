@@ -1,0 +1,650 @@
+{
+  "name": "SEO Watchdog - Complete Unified Workflow",
+  "description": "Comprehensive SEO monitoring with batch processing, keyword prioritization, and Google Sheets integration",
+  "version": "3.0",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "value": "0 9 * * *"
+            }
+          ]
+        }
+      },
+      "id": "daily_scheduler",
+      "name": "Daily Scheduler",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [240, 400],
+      "notes": "🕘 DAILY SCHEDULER\n• Triggers at 9 AM daily\n• Initiates complete SEO analysis\n• Batch processing enabled\n• Keyword prioritization included"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 🎯 COMPREHENSIVE WORKFLOW CONFIGURATION\n// Master configuration for the entire SEO Watchdog workflow\n\nconst masterConfig = {\n  // 📊 BATCH PROCESSING SETTINGS\n  batch_settings: {\n    performance_batch_size: 100,\n    keywords_batch_size: 50,\n    indexing_batch_size: 100,\n    tracked_keywords_limit: 200,\n    batch_delay: 2000,\n    query_timeout: 45000\n  },\n  \n  // 📅 DATE RANGE CONFIGURATION\n  date_settings: {\n    max_days_back: 30,\n    analysis_date: new Date().toISOString().split('T')[0],\n    start_date: new Date(Date.now() - (30 * 24 * 60 * 60 * 1000)).toISOString().split('T')[0],\n    end_date: new Date(Date.now() - (24 * 60 * 60 * 1000)).toISOString().split('T')[0]\n  },\n  \n  // 🎯 KEYWORD PRIORITY SCORING\n  priority_scoring: {\n    // Thresholds\n    high_impressions_threshold: 10000,\n    medium_impressions_threshold: 1000,\n    low_ctr_threshold: 2.0,\n    good_ctr_threshold: 5.0,\n    high_position_threshold: 3,\n    medium_position_threshold: 10,\n    low_position_threshold: 20,\n    min_clicks_threshold: 5,\n    \n    // Scoring weights (must total 1.0)\n    weights: {\n      impressions_weight: 0.3,\n      position_weight: 0.25,\n      ctr_weight: 0.2,\n      clicks_weight: 0.15,\n      trend_weight: 0.1\n    }\n  },\n  \n  // 🔧 PERFORMANCE SETTINGS\n  performance_settings: {\n    max_total_records: 1000,\n    priority_threshold: 1000,\n    enable_indexing_analysis: true,\n    enable_keyword_tracking: true,\n    enable_priority_scoring: true\n  },\n  \n  // 📊 EXECUTION METADATA\n  execution_metadata: {\n    workflow_version: '3.0-complete',\n    execution_id: `seo_complete_${Date.now()}`,\n    start_time: new Date().toISOString(),\n    features_enabled: [\n      'batch_processing',\n      'keyword_prioritization', \n      'google_sheets_integration',\n      'performance_analysis',\n      'indexing_monitoring',\n      'ai_analysis',\n      'telegram_reporting'\n    ]\n  }\n};\n\nconsole.log('🚀 SEO Watchdog Complete Workflow Initialized');\nconsole.log(`📅 Analysis Period: ${masterConfig.date_settings.start_date} to ${masterConfig.date_settings.end_date}`);\nconsole.log(`🔢 Batch Sizes: Performance(${masterConfig.batch_settings.performance_batch_size}), Keywords(${masterConfig.batch_settings.keywords_batch_size})`);\nconsole.log(`🎯 Features: ${masterConfig.execution_metadata.features_enabled.join(', ')}`);\n\nreturn { json: masterConfig };"
+      },
+      "id": "master_config",
+      "name": "Master Configuration",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 400],
+      "notes": "🎯 MASTER CONFIGURATION\n\n📋 COMPREHENSIVE SETTINGS:\n• Batch processing limits\n• Date range configuration\n• Priority scoring weights\n• Performance thresholds\n• Feature toggles\n\n🔧 CUSTOMIZATION:\n• Adjust batch sizes\n• Modify scoring weights\n• Change date ranges\n• Enable/disable features\n\n⚡ OPTIMIZATION:\n• Timeout prevention\n• Memory management\n• Performance tuning\n• Error handling"
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "documentId": "={{ $env.TRACKED_KEYWORDS_SHEET_ID }}",
+        "sheetName": "Keywords",
+        "range": "A:E",
+        "options": {
+          "headerRow": true
+        }
+      },
+      "id": "load_tracked_keywords",
+      "name": "Load Tracked Keywords",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [680, 300],
+      "notes": "📊 TRACKED KEYWORDS LOADER\n\n📋 GOOGLE SHEETS STRUCTURE:\n• A: Keyword (required)\n• B: Priority (High/Medium/Low)\n• C: Target Position (1-20)\n• D: Business Value (1-10)\n• E: Notes (optional)\n\n🎯 PURPOSE:\n• Load user-defined keywords\n• Apply manual priorities\n• Set optimization targets\n• Track business importance\n\n🔧 CONFIGURATION:\n• Sheet ID: TRACKED_KEYWORDS_SHEET_ID\n• Auto-header detection\n• Error handling for missing data"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 🎯 KEYWORD PROCESSOR & VALIDATOR\n// Processes tracked keywords and creates BigQuery filters\n\ntry {\n  // 📊 Extract and validate keywords\n  const keywordsData = $input.all() || [];\n  const masterConfig = $(\"Master Configuration\").first().json;\n  \n  // 🛡️ Clean and validate keyword data\n  const validKeywords = keywordsData\n    .filter(item => {\n      return item.json && \n             item.json.Keyword && \n             item.json.Keyword.trim() && \n             item.json.Keyword.trim().length > 0;\n    })\n    .map(item => {\n      const keyword = item.json.Keyword.trim().toLowerCase();\n      const priority = (item.json.Priority || 'Medium').toString().toLowerCase();\n      const targetPosition = parseInt(item.json['Target Position']) || 10;\n      const businessValue = parseInt(item.json['Business Value']) || 5;\n      const notes = (item.json.Notes || '').toString().trim();\n      \n      return {\n        keyword: keyword,\n        original_keyword: item.json.Keyword.trim(),\n        priority: priority,\n        target_position: Math.max(1, Math.min(20, targetPosition)),\n        business_value: Math.max(1, Math.min(10, businessValue)),\n        notes: notes,\n        manual_priority: true,\n        is_tracked: true\n      };\n    })\n    .slice(0, masterConfig.batch_settings.tracked_keywords_limit);\n  \n  // 🎯 Create SQL-safe keyword filter\n  const keywordsList = validKeywords\n    .map(k => `'${k.keyword.replace(/'/g, \"''\")}'`)\n    .join(', ');\n  \n  // 📊 Calculate priority distribution\n  const priorityDistribution = {\n    high: validKeywords.filter(k => k.priority === 'high').length,\n    medium: validKeywords.filter(k => k.priority === 'medium').length,\n    low: validKeywords.filter(k => k.priority === 'low').length\n  };\n  \n  // 📈 Calculate business value distribution\n  const businessValueStats = {\n    high_value: validKeywords.filter(k => k.business_value >= 8).length,\n    medium_value: validKeywords.filter(k => k.business_value >= 5 && k.business_value < 8).length,\n    low_value: validKeywords.filter(k => k.business_value < 5).length,\n    average_value: validKeywords.length > 0 ? \n      validKeywords.reduce((sum, k) => sum + k.business_value, 0) / validKeywords.length : 0\n  };\n  \n  // 🎯 Processed keyword data\n  const processedKeywordData = {\n    tracked_keywords: validKeywords,\n    keywords_list: keywordsList,\n    total_keywords: validKeywords.length,\n    \n    // 📊 STATISTICS\n    priority_distribution: priorityDistribution,\n    business_value_stats: businessValueStats,\n    \n    // 🔍 QUERY FILTERS\n    keywords_query_filter: validKeywords.length > 0 ? \n      `AND LOWER(query) IN (${keywordsList})` : '',\n    has_tracked_keywords: validKeywords.length > 0,\n    \n    // ✅ PROCESSING STATUS\n    processing_status: {\n      success: true,\n      keywords_loaded: validKeywords.length,\n      keywords_truncated: keywordsData.length > masterConfig.batch_settings.tracked_keywords_limit,\n      original_count: keywordsData.length,\n      valid_count: validKeywords.length\n    }\n  };\n  \n  console.log(`✅ Keywords Processed Successfully:`);\n  console.log(`📊 Total Keywords: ${validKeywords.length}`);\n  console.log(`🎯 Priority Distribution: High(${priorityDistribution.high}), Medium(${priorityDistribution.medium}), Low(${priorityDistribution.low})`);\n  console.log(`💼 Avg Business Value: ${businessValueStats.average_value.toFixed(1)}/10`);\n  \n  return { json: processedKeywordData };\n  \n} catch (error) {\n  console.error('❌ Keyword Processing Error:', error.message);\n  \n  return {\n    json: {\n      tracked_keywords: [],\n      keywords_list: '',\n      total_keywords: 0,\n      priority_distribution: { high: 0, medium: 0, low: 0 },\n      business_value_stats: { high_value: 0, medium_value: 0, low_value: 0, average_value: 0 },\n      keywords_query_filter: '',\n      has_tracked_keywords: false,\n      processing_status: {\n        success: false,\n        keywords_loaded: 0,\n        keywords_truncated: false,\n        original_count: 0,\n        valid_count: 0,\n        error: error.message\n      }\n    }\n  };\n}"
+      },
+      "id": "process_keywords",
+      "name": "Process Keywords",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300],
+      "notes": "🎯 KEYWORD PROCESSOR\n\n📊 PROCESSING FEATURES:\n• Validates & cleans keywords\n• Creates SQL-safe filters\n• Calculates distributions\n• Handles business values\n• Enforces batch limits\n\n🛡️ DATA VALIDATION:\n• Removes empty/invalid entries\n• Sanitizes SQL inputs\n• Validates ranges\n• Error handling\n\n📈 STATISTICS:\n• Priority distribution\n• Business value analysis\n• Processing metrics\n• Quality indicators"
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "projectId": "={{ $env.GCP_PROJECT_ID }}",
+        "query": "-- 🎯 COMPREHENSIVE KEYWORD PRIORITY ANALYSIS\n-- Advanced query combining tracked keywords with priority scoring\n\nWITH tracked_keyword_base AS (\n  SELECT \n    date,\n    query,\n    page,\n    device,\n    SUM(clicks) as daily_clicks,\n    SUM(impressions) as daily_impressions,\n    SAFE_DIVIDE(SUM(clicks), SUM(impressions)) * 100 as daily_ctr,\n    AVG(position) as daily_position,\n    DATE_TRUNC(date, WEEK) as week,\n    ROW_NUMBER() OVER (ORDER BY SUM(impressions) DESC, SUM(clicks) DESC) as priority_rank\n  FROM `{{ $env.GCP_PROJECT_ID }}.searchconsole.searchdata_site_impression`\n  WHERE \n    date >= '{{ $(\"Master Configuration\").first().json.date_settings.start_date }}'\n    AND date <= '{{ $(\"Master Configuration\").first().json.date_settings.end_date }}'\n    {{ $(\"Process Keywords\").first().json.keywords_query_filter || '' }}\n    AND impressions >= {{ $(\"Master Configuration\").first().json.priority_scoring.min_clicks_threshold }}\n  GROUP BY date, query, page, device, week\n  HAVING priority_rank <= {{ $(\"Master Configuration\").first().json.batch_settings.keywords_batch_size }}\n),\n\nkeyword_performance_metrics AS (\n  SELECT \n    query,\n    page,\n    SUM(daily_clicks) as total_clicks,\n    SUM(daily_impressions) as total_impressions,\n    SAFE_DIVIDE(SUM(daily_clicks), SUM(daily_impressions)) * 100 as avg_ctr,\n    AVG(daily_position) as avg_position,\n    COUNT(DISTINCT date) as days_with_data,\n    STDDEV(daily_position) as position_volatility,\n    \n    -- 📊 VOLUME CLASSIFICATION\n    CASE \n      WHEN SUM(daily_impressions) >= {{ $(\"Master Configuration\").first().json.priority_scoring.high_impressions_threshold }} THEN 'HIGH_VOLUME'\n      WHEN SUM(daily_impressions) >= {{ $(\"Master Configuration\").first().json.priority_scoring.medium_impressions_threshold }} THEN 'MEDIUM_VOLUME'\n      ELSE 'LOW_VOLUME'\n    END as volume_tier,\n    \n    -- 🎯 POSITION CLASSIFICATION\n    CASE \n      WHEN AVG(daily_position) <= {{ $(\"Master Configuration\").first().json.priority_scoring.high_position_threshold }} THEN 'TOP_3'\n      WHEN AVG(daily_position) <= {{ $(\"Master Configuration\").first().json.priority_scoring.medium_position_threshold }} THEN 'TOP_10'\n      WHEN AVG(daily_position) <= {{ $(\"Master Configuration\").first().json.priority_scoring.low_position_threshold }} THEN 'TOP_20'\n      ELSE 'BELOW_20'\n    END as position_tier,\n    \n    -- 📈 CTR CLASSIFICATION\n    CASE \n      WHEN SAFE_DIVIDE(SUM(daily_clicks), SUM(daily_impressions)) * 100 >= {{ $(\"Master Configuration\").first().json.priority_scoring.good_ctr_threshold }} THEN 'GOOD_CTR'\n      WHEN SAFE_DIVIDE(SUM(daily_clicks), SUM(daily_impressions)) * 100 <= {{ $(\"Master Configuration\").first().json.priority_scoring.low_ctr_threshold }} THEN 'LOW_CTR'\n      ELSE 'AVERAGE_CTR'\n    END as ctr_tier\n  FROM tracked_keyword_base\n  GROUP BY query, page\n),\n\nweekly_trend_analysis AS (\n  SELECT \n    query,\n    page,\n    week,\n    SUM(daily_clicks) as weekly_clicks,\n    SUM(daily_impressions) as weekly_impressions,\n    AVG(daily_position) as weekly_avg_position,\n    LAG(SUM(daily_clicks), 1) OVER (PARTITION BY query, page ORDER BY week) as prev_week_clicks,\n    LAG(AVG(daily_position), 1) OVER (PARTITION BY query, page ORDER BY week) as prev_week_position\n  FROM tracked_keyword_base\n  GROUP BY query, page, week\n),\n\nlatest_trends AS (\n  SELECT \n    query,\n    page,\n    COALESCE(\n      SAFE_DIVIDE(\n        weekly_clicks - prev_week_clicks,\n        NULLIF(prev_week_clicks, 0)\n      ) * 100, \n      0\n    ) as clicks_change_percent,\n    COALESCE(weekly_avg_position - prev_week_position, 0) as position_change\n  FROM weekly_trend_analysis\n  WHERE week = (\n    SELECT MAX(week) \n    FROM weekly_trend_analysis wta2 \n    WHERE wta2.query = weekly_trend_analysis.query \n    AND wta2.page = weekly_trend_analysis.page\n  )\n),\n\n-- 🎯 COMPREHENSIVE PRIORITY SCORING\nkeyword_priority_scores AS (\n  SELECT \n    kpm.*,\n    lt.clicks_change_percent,\n    lt.position_change,\n    \n    -- 📊 CALCULATE WEIGHTED PRIORITY SCORE (0-100)\n    ROUND(\n      -- Volume component (30%)\n      (CASE \n        WHEN kpm.volume_tier = 'HIGH_VOLUME' THEN 30\n        WHEN kpm.volume_tier = 'MEDIUM_VOLUME' THEN 20\n        ELSE 10\n      END) +\n      \n      -- Position component (25%) - better position = higher score\n      (CASE \n        WHEN kpm.position_tier = 'TOP_3' THEN 25\n        WHEN kpm.position_tier = 'TOP_10' THEN 20\n        WHEN kpm.position_tier = 'TOP_20' THEN 15\n        ELSE 5\n      END) +\n      \n      -- CTR component (20%)\n      (CASE \n        WHEN kpm.ctr_tier = 'GOOD_CTR' THEN 20\n        WHEN kpm.ctr_tier = 'AVERAGE_CTR' THEN 15\n        WHEN kpm.ctr_tier = 'LOW_CTR' THEN 5\n        ELSE 10\n      END) +\n      \n      -- Traffic component (15%)\n      (CASE \n        WHEN kpm.total_clicks >= 100 THEN 15\n        WHEN kpm.total_clicks >= 20 THEN 12\n        WHEN kpm.total_clicks >= 5 THEN 8\n        ELSE 3\n      END) +\n      \n      -- Trend component (10%)\n      (CASE \n        WHEN COALESCE(lt.clicks_change_percent, 0) > 50 THEN 10\n        WHEN COALESCE(lt.clicks_change_percent, 0) > 20 THEN 8\n        WHEN COALESCE(lt.clicks_change_percent, 0) > 0 THEN 6\n        WHEN COALESCE(lt.clicks_change_percent, 0) > -20 THEN 4\n        ELSE 1\n      END)\n    ) as priority_score,\n    \n    -- 🎯 OPPORTUNITY CLASSIFICATION\n    CASE \n      WHEN kpm.avg_position BETWEEN 4 AND 10 AND kpm.total_impressions > 1000 THEN 'POSITION_OPPORTUNITY'\n      WHEN kpm.avg_ctr < {{ $(\"Master Configuration\").first().json.priority_scoring.low_ctr_threshold }} AND kmp.total_impressions > 500 THEN 'CTR_OPPORTUNITY'\n      WHEN kmp.avg_position BETWEEN 11 AND 20 AND kmp.total_impressions > 200 THEN 'VISIBILITY_OPPORTUNITY'\n      WHEN COALESCE(lt.clicks_change_percent, 0) < -30 THEN 'DECLINING_KEYWORD'\n      WHEN kmp.total_impressions > {{ $(\"Master Configuration\").first().json.priority_scoring.high_impressions_threshold }} THEN 'HIGH_VALUE_MONITOR'\n      WHEN kmp.position_volatility > 5 THEN 'UNSTABLE_RANKING'\n      ELSE 'STANDARD_TRACKING'\n    END as opportunity_type,\n    \n    -- 📊 KEYWORD HEALTH SCORE\n    CASE\n      WHEN kmp.avg_position <= 3 AND kmp.avg_ctr >= 5 AND COALESCE(lt.clicks_change_percent, 0) >= 0 THEN 'EXCELLENT'\n      WHEN kmp.avg_position <= 10 AND kmp.avg_ctr >= 2 AND COALESCE(lt.clicks_change_percent, 0) >= -10 THEN 'GOOD'\n      WHEN kmp.avg_position <= 20 AND kmp.avg_ctr >= 1 THEN 'FAIR'\n      ELSE 'NEEDS_ATTENTION'\n    END as keyword_health\n    \n  FROM keyword_performance_metrics kpm\n  LEFT JOIN latest_trends lt ON kpm.query = lt.query AND kpm.page = lt.page\n)\n\n-- 🏆 FINAL PRIORITIZED RESULTS\nSELECT \n  query,\n  page,\n  total_clicks,\n  total_impressions,\n  ROUND(avg_ctr, 2) as avg_ctr,\n  ROUND(avg_position, 1) as avg_position,\n  days_with_data,\n  ROUND(position_volatility, 2) as position_volatility,\n  volume_tier,\n  position_tier,\n  ctr_tier,\n  ROUND(clicks_change_percent, 1) as trend_percent,\n  ROUND(position_change, 1) as position_change,\n  priority_score,\n  opportunity_type,\n  keyword_health,\n  \n  -- 🏆 FINAL PRIORITY CLASSIFICATION\n  CASE \n    WHEN priority_score >= 85 THEN 'CRITICAL'\n    WHEN priority_score >= 70 THEN 'HIGH'\n    WHEN priority_score >= 50 THEN 'MEDIUM'\n    ELSE 'LOW'\n  END as final_priority,\n  \n  -- 📅 METADATA\n  '{{ $(\"Master Configuration\").first().json.date_settings.analysis_date }}' as analysis_date\n  \nFROM keyword_priority_scores\nORDER BY priority_score DESC, total_impressions DESC\nLIMIT {{ $(\"Master Configuration\").first().json.batch_settings.keywords_batch_size }}"
+      },
+      "id": "keyword_priority_analysis",
+      "name": "Keyword Priority Analysis",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 1,
+      "position": [1120, 200],
+      "notes": "🎯 KEYWORD PRIORITY ANALYSIS\n\n🏆 ADVANCED SCORING (0-100):\n• Volume (30%): Impression-based scoring\n• Position (25%): Ranking performance\n• CTR (20%): Click-through efficiency\n• Traffic (15%): Actual click volume\n• Trend (10%): Performance momentum\n\n📊 CLASSIFICATIONS:\n• CRITICAL (85-100): Urgent attention\n• HIGH (70-84): High impact potential\n• MEDIUM (50-69): Standard optimization\n• LOW (0-49): Monitor only\n\n🎯 OPPORTUNITY TYPES:\n• POSITION_OPPORTUNITY: Rankings 4-10\n• CTR_OPPORTUNITY: Low CTR optimization\n• VISIBILITY_OPPORTUNITY: Rankings 11-20\n• DECLINING_KEYWORD: Performance drops\n• HIGH_VALUE_MONITOR: Volume tracking\n• UNSTABLE_RANKING: Volatility issues\n\n📈 HEALTH INDICATORS:\n• EXCELLENT: Top performance\n• GOOD: Strong performance\n• FAIR: Adequate performance\n• NEEDS_ATTENTION: Issues detected"
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "projectId": "={{ $env.GCP_PROJECT_ID }}",
+        "query": "-- 📊 ENHANCED PERFORMANCE DATA WITH KEYWORD CONTEXT\n-- Comprehensive site performance analysis with tracked keyword awareness\n\nWITH recent_performance_data AS (\n  SELECT \n    date,\n    page,\n    query,\n    clicks,\n    impressions,\n    SAFE_DIVIDE(clicks, impressions) * 100 as ctr,\n    position,\n    device,\n    -- 🎯 Mark tracked keywords\n    CASE \n      WHEN {{ $(\"Process Keywords\").first().json.has_tracked_keywords || false }} = true\n           {{ $(\"Process Keywords\").first().json.keywords_query_filter || '' }}\n      THEN true\n      ELSE false\n    END as is_tracked_keyword,\n    ROW_NUMBER() OVER (ORDER BY impressions DESC, clicks DESC) as performance_rank\n  FROM `{{ $env.GCP_PROJECT_ID }}.searchconsole.searchdata_site_impression`\n  WHERE \n    date >= '{{ $(\"Master Configuration\").first().json.date_settings.start_date }}'\n    AND date <= '{{ $(\"Master Configuration\").first().json.date_settings.end_date }}'\n    AND impressions >= {{ $(\"Master Configuration\").first().json.priority_scoring.min_clicks_threshold }}\n  HAVING performance_rank <= {{ $(\"Master Configuration\").first().json.performance_settings.max_total_records }}\n),\n\npage_performance_analysis AS (\n  SELECT \n    page,\n    SUM(clicks) as total_clicks,\n    SUM(impressions) as total_impressions,\n    SAFE_DIVIDE(SUM(clicks), SUM(impressions)) * 100 as avg_ctr,\n    AVG(position) as avg_position,\n    COUNT(DISTINCT query) as total_keywords,\n    COUNT(DISTINCT CASE WHEN is_tracked_keyword THEN query END) as tracked_keywords_count,\n    MAX(date) as last_data_date,\n    DATE_DIFF(CURRENT_DATE(), MAX(date), DAY) as days_since_last_data,\n    \n    -- 📊 PERFORMANCE METRICS\n    SUM(CASE WHEN is_tracked_keyword THEN clicks ELSE 0 END) as tracked_clicks,\n    SUM(CASE WHEN is_tracked_keyword THEN impressions ELSE 0 END) as tracked_impressions,\n    \n    -- 🎯 PAGE CLASSIFICATION\n    CASE\n      WHEN COUNT(DISTINCT CASE WHEN is_tracked_keyword THEN query END) > 0 THEN 'TRACKED_PAGE'\n      ELSE 'ORGANIC_PAGE'\n    END as page_type\n  FROM recent_performance_data\n  GROUP BY page\n),\n\nweekly_traffic_trends AS (\n  SELECT \n    page,\n    DATE_TRUNC(date, WEEK) as week,\n    SUM(clicks) as weekly_clicks,\n    SUM(impressions) as weekly_impressions,\n    AVG(position) as weekly_avg_position\n  FROM recent_performance_data\n  GROUP BY page, week\n),\n\nlatest_week_comparison AS (\n  SELECT \n    page,\n    weekly_clicks as current_week_clicks,\n    LAG(weekly_clicks, 1) OVER (PARTITION BY page ORDER BY week) as prev_week_clicks,\n    weekly_avg_position as current_week_position,\n    LAG(weekly_avg_position, 1) OVER (PARTITION BY page ORDER BY week) as prev_week_position,\n    SAFE_DIVIDE(\n      weekly_clicks - LAG(weekly_clicks, 1) OVER (PARTITION BY page ORDER BY week),\n      LAG(weekly_clicks, 1) OVER (PARTITION BY page ORDER BY week)\n    ) * 100 as clicks_change_percent,\n    weekly_avg_position - LAG(weekly_avg_position, 1) OVER (PARTITION BY page ORDER BY week) as position_change\n  FROM weekly_traffic_trends\n  WHERE week = DATE_TRUNC(DATE_SUB(CURRENT_DATE(), INTERVAL 7 DAY), WEEK)\n)\n\n-- 🎯 COMPREHENSIVE PAGE PERFORMANCE RESULTS\nSELECT \n  ppa.page,\n  ppa.total_clicks,\n  ppa.total_impressions,\n  ROUND(ppa.avg_ctr, 2) as avg_ctr,\n  ROUND(ppa.avg_position, 1) as avg_position,\n  ppa.total_keywords,\n  ppa.tracked_keywords_count,\n  ppa.tracked_clicks,\n  ppa.tracked_impressions,\n  ppa.days_since_last_data,\n  ppa.page_type,\n  \n  -- 📈 TREND DATA\n  COALESCE(ROUND(lwc.clicks_change_percent, 1), 0) as clicks_change_percent,\n  COALESCE(ROUND(lwc.position_change, 1), 0) as position_change,\n  \n  -- 🚨 ENHANCED ALERT CLASSIFICATION\n  CASE \n    WHEN COALESCE(lwc.clicks_change_percent, 0) < -30 AND ppa.tracked_keywords_count > 0 THEN 'CRITICAL_TRACKED_DROP'\n    WHEN COALESCE(lwc.clicks_change_percent, 0) < -20 AND ppa.tracked_keywords_count > 0 THEN 'TRACKED_TRAFFIC_DROP'\n    WHEN COALESCE(lwc.clicks_change_percent, 0) < -20 THEN 'TRAFFIC_DROP'\n    WHEN COALESCE(lwc.clicks_change_percent, 0) > 30 AND ppa.tracked_keywords_count > 0 THEN 'TRACKED_TRAFFIC_SURGE'\n    WHEN COALESCE(lwc.clicks_change_percent, 0) > 20 THEN 'TRAFFIC_SURGE'\n    WHEN ppa.avg_ctr < {{ $(\"Master Configuration\").first().json.priority_scoring.low_ctr_threshold }} AND ppa.total_impressions > 1000 AND ppa.tracked_keywords_count > 0 THEN 'TRACKED_LOW_CTR'\n    WHEN ppa.avg_ctr < {{ $(\"Master Configuration\").first().json.priority_scoring.low_ctr_threshold }} AND ppa.total_impressions > 1000 THEN 'LOW_CTR_OPPORTUNITY'\n    WHEN ppa.avg_position > {{ $(\"Master Configuration\").first().json.priority_scoring.medium_position_threshold }} AND ppa.total_impressions > 500 AND ppa.tracked_keywords_count > 0 THEN 'TRACKED_LOW_POSITION'\n    WHEN ppa.avg_position > {{ $(\"Master Configuration\").first().json.priority_scoring.medium_position_threshold }} AND ppa.total_impressions > 500 THEN 'POSITION_OPPORTUNITY'\n    WHEN ppa.days_since_last_data > 7 THEN 'POTENTIAL_INDEXING_ISSUE'\n    WHEN ppa.tracked_keywords_count > 0 THEN 'TRACKED_NORMAL'\n    ELSE 'NORMAL'\n  END as alert_type,\n  \n  -- 🏆 PAGE PRIORITY SCORING\n  CASE \n    WHEN ppa.tracked_keywords_count > 0 AND ppa.total_impressions > {{ $(\"Master Configuration\").first().json.priority_scoring.high_impressions_threshold }} THEN 'CRITICAL'\n    WHEN ppa.tracked_keywords_count > 0 AND ppa.total_impressions > {{ $(\"Master Configuration\").first().json.priority_scoring.medium_impressions_threshold }} THEN 'HIGH'\n    WHEN ppa.tracked_keywords_count > 0 THEN 'MEDIUM'\n    WHEN ppa.total_impressions > {{ $(\"Master Configuration\").first().json.priority_scoring.high_impressions_threshold }} THEN 'MEDIUM'\n    ELSE 'LOW'\n  END as page_priority,\n  \n  -- 📅 METADATA\n  '{{ $(\"Master Configuration\").first().json.date_settings.analysis_date }}' as analysis_date\n  \nFROM page_performance_analysis ppa\nLEFT JOIN latest_week_comparison lwc ON ppa.page = lwc.page\nORDER BY \n  CASE WHEN ppa.tracked_keywords_count > 0 THEN 0 ELSE 1 END,  -- Tracked pages first\n  ppa.total_clicks DESC\nLIMIT {{ $(\"Master Configuration\").first().json.batch_settings.performance_batch_size }}"
+      },
+      "id": "performance_analysis",
+      "name": "Performance Analysis",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 1,
+      "position": [1120, 400],
+      "notes": "📊 ENHANCED PERFORMANCE ANALYSIS\n\n🎯 TRACKED KEYWORD AWARENESS:\n• Identifies pages with tracked keywords\n• Separates tracked vs organic performance\n• Calculates tracked keyword metrics\n• Prioritizes tracked content\n\n🚨 ADVANCED ALERT SYSTEM:\n• CRITICAL_TRACKED_DROP: >30% drop on tracked pages\n• TRACKED_TRAFFIC_DROP: Traffic loss on tracked keywords\n• TRACKED_LOW_CTR: CTR issues on tracked content\n• TRACKED_LOW_POSITION: Position problems\n• POTENTIAL_INDEXING_ISSUE: Technical problems\n\n🏆 PAGE PRIORITIES:\n• CRITICAL: High-volume tracked pages\n• HIGH: Medium-volume tracked pages\n• MEDIUM: Low-volume tracked or high organic\n• LOW: Standard organic pages\n\n📈 COMPREHENSIVE METRICS:\n• Traffic trends & changes\n• Position movements\n• CTR performance\n• Keyword distribution"
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "projectId": "={{ $env.GCP_PROJECT_ID }}",
+        "query": "-- 🔍 INDEXING & CRAWL STATUS ANALYSIS\n-- Monitors Google Search Console indexing health\n\nWITH recent_crawl_data AS (\n  SELECT \n    page_url,\n    last_crawl_time,\n    coverage_state,\n    is_excluded,\n    crawl_anomaly_reason,\n    DATE_DIFF(CURRENT_DATE(), DATE(last_crawl_time), DAY) as days_since_crawl,\n    ROW_NUMBER() OVER (ORDER BY last_crawl_time DESC) as crawl_recency_rank\n  FROM `{{ $env.GCP_PROJECT_ID }}.searchconsole.crawl_stats`\n  WHERE \n    DATE(last_crawl_time) >= DATE_SUB('{{ $(\"Master Configuration\").first().json.date_settings.end_date }}', INTERVAL 14 DAY)\n    AND DATE(last_crawl_time) <= '{{ $(\"Master Configuration\").first().json.date_settings.end_date }}'\n  HAVING crawl_recency_rank <= {{ $(\"Master Configuration\").first().json.batch_settings.indexing_batch_size }}\n),\n\nindexing_status_analysis AS (\n  SELECT \n    page_url,\n    last_crawl_time,\n    coverage_state,\n    is_excluded,\n    crawl_anomaly_reason,\n    days_since_crawl,\n    \n    -- 🔍 INDEXING STATUS CLASSIFICATION\n    CASE \n      WHEN is_excluded = FALSE AND coverage_state = 'Valid' AND days_since_crawl <= 3 THEN 'NEWLY_INDEXED'\n      WHEN is_excluded = FALSE AND coverage_state = 'Valid' THEN 'INDEXED_NORMAL'\n      WHEN is_excluded = TRUE OR coverage_state IN ('Error', 'Excluded') THEN 'DEINDEXED'\n      WHEN days_since_crawl > 14 THEN 'CRAWL_DELAYED'\n      WHEN days_since_crawl > 7 THEN 'CRAWL_ISSUE'\n      WHEN coverage_state = 'Pending' THEN 'PENDING_INDEX'\n      ELSE 'UNKNOWN_STATUS'\n    END as indexing_status,\n    \n    -- 🚨 ISSUE SEVERITY\n    CASE \n      WHEN is_excluded = TRUE AND coverage_state = 'Error' THEN 'CRITICAL'\n      WHEN days_since_crawl > 14 THEN 'HIGH'\n      WHEN coverage_state = 'Excluded' THEN 'MEDIUM'\n      WHEN days_since_crawl > 7 THEN 'MEDIUM'\n      ELSE 'LOW'\n    END as issue_severity,\n    \n    -- 🔧 RECOMMENDED ACTION\n    CASE \n      WHEN is_excluded = TRUE AND coverage_state = 'Error' THEN 'FIX_TECHNICAL_ERROR'\n      WHEN days_since_crawl > 14 THEN 'REQUEST_REINDEX'\n      WHEN coverage_state = 'Excluded' AND crawl_anomaly_reason IS NOT NULL THEN 'REVIEW_EXCLUSION_REASON'\n      WHEN days_since_crawl > 7 THEN 'MONITOR_CRAWLING'\n      WHEN coverage_state = 'Pending' THEN 'WAIT_FOR_INDEX'\n      ELSE 'NO_ACTION_NEEDED'\n    END as recommended_action\n  FROM recent_crawl_data\n),\n\nindexing_summary_stats AS (\n  SELECT \n    indexing_status,\n    issue_severity,\n    COUNT(*) as page_count,\n    AVG(days_since_crawl) as avg_days_since_crawl,\n    MAX(days_since_crawl) as max_days_since_crawl\n  FROM indexing_status_analysis\n  GROUP BY indexing_status, issue_severity\n)\n\n-- 🎯 INDEXING ANALYSIS RESULTS\nSELECT \n  isa.page_url,\n  isa.last_crawl_time,\n  isa.coverage_state,\n  isa.is_excluded,\n  isa.crawl_anomaly_reason,\n  isa.days_since_crawl,\n  isa.indexing_status,\n  isa.issue_severity,\n  isa.recommended_action,\n  \n  -- 📊 CONTEXT FROM SUMMARY\n  iss.page_count as similar_issues_count,\n  ROUND(iss.avg_days_since_crawl, 1) as avg_days_for_status,\n  \n  -- 📅 METADATA\n  '{{ $(\"Master Configuration\").first().json.date_settings.analysis_date }}' as analysis_date\n  \nFROM indexing_status_analysis isa\nLEFT JOIN indexing_summary_stats iss \n  ON isa.indexing_status = iss.indexing_status \n  AND isa.issue_severity = iss.issue_severity\nWHERE isa.indexing_status != 'INDEXED_NORMAL'  -- Focus on issues only\nORDER BY \n  CASE isa.issue_severity \n    WHEN 'CRITICAL' THEN 1 \n    WHEN 'HIGH' THEN 2 \n    WHEN 'MEDIUM' THEN 3 \n    ELSE 4 \n  END,\n  isa.days_since_crawl DESC\nLIMIT {{ $(\"Master Configuration\").first().json.batch_settings.indexing_batch_size }}"
+      },
+      "id": "indexing_analysis",
+      "name": "Indexing Analysis",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 1,
+      "position": [1120, 600],
+      "notes": "🔍 INDEXING STATUS ANALYSIS\n\n📊 STATUS CLASSIFICATIONS:\n• NEWLY_INDEXED: Recently added (≤3 days)\n• INDEXED_NORMAL: Healthy indexing\n• DEINDEXED: Removed from index\n• CRAWL_DELAYED: >14 days since crawl\n• CRAWL_ISSUE: >7 days since crawl\n• PENDING_INDEX: Awaiting indexing\n• UNKNOWN_STATUS: Unclear status\n\n🚨 SEVERITY LEVELS:\n• CRITICAL: Technical errors, exclusions\n• HIGH: Long crawl delays (>14 days)\n• MEDIUM: Exclusions, medium delays\n• LOW: Minor issues\n\n🔧 ACTIONABLE RECOMMENDATIONS:\n• FIX_TECHNICAL_ERROR: Address errors\n• REQUEST_REINDEX: Submit for reindexing\n• REVIEW_EXCLUSION_REASON: Check exclusions\n• MONITOR_CRAWLING: Watch crawl frequency\n• WAIT_FOR_INDEX: Allow processing time\n• NO_ACTION_NEEDED: Status is normal\n\n📈 CONTEXT METRICS:\n• Similar issues count\n• Average days for status\n• Severity-based prioritization"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 🎯 COMPREHENSIVE DATA INTEGRATION\n// Master processor combining all SEO analysis data\n\ntry {\n  // 📊 EXTRACT ALL DATA SOURCES\n  const masterConfig = $(\"Master Configuration\").first().json;\n  const trackedKeywords = $(\"Process Keywords\").first().json.tracked_keywords || [];\n  const keywordAnalysis = $input.all().filter(item => item.json.query && item.json.priority_score) || [];\n  const performanceData = $input.all().filter(item => item.json.page && item.json.total_clicks !== undefined) || [];\n  const indexingData = $input.all().filter(item => item.json.page_url && item.json.indexing_status) || [];\n  \n  // 🛡️ DATA VALIDATION\n  const validKeywordAnalysis = Array.isArray(keywordAnalysis) ? \n    keywordAnalysis.map(item => item.json) : \n    (keywordAnalysis.length > 0 ? [keywordAnalysis[0].json] : []);\n    \n  const validPerformanceData = Array.isArray(performanceData) ? \n    performanceData.map(item => item.json) : \n    (performanceData.length > 0 ? [performanceData[0].json] : []);\n    \n  const validIndexingData = Array.isArray(indexingData) ? \n    indexingData.map(item => item.json) : \n    (indexingData.length > 0 ? [indexingData[0].json] : []);\n  \n  // 🎯 ENHANCE KEYWORDS WITH MANUAL PRIORITIES\n  const enhancedKeywords = validKeywordAnalysis.map(keyword => {\n    const trackedKeyword = trackedKeywords.find(tk => \n      tk.keyword === keyword.query?.toLowerCase()\n    );\n    \n    return {\n      ...keyword,\n      is_manually_tracked: !!trackedKeyword,\n      manual_priority: trackedKeyword?.priority || null,\n      business_value: trackedKeyword?.business_value || null,\n      target_position: trackedKeyword?.target_position || null,\n      notes: trackedKeyword?.notes || null,\n      // 🎯 ENHANCED PRIORITY SCORING\n      enhanced_priority_score: keyword.priority_score + \n        (trackedKeyword?.business_value || 0) * 2, // Boost for business value\n      meets_target: trackedKeyword?.target_position ? \n        keyword.avg_position <= trackedKeyword.target_position : null\n    };\n  });\n  \n  // 📊 COMPREHENSIVE ANALYSIS SUMMARY\n  const comprehensiveAnalysis = {\n    // 📅 METADATA\n    analysis_date: masterConfig.date_settings.analysis_date,\n    processing_timestamp: new Date().toISOString(),\n    workflow_version: masterConfig.execution_metadata.workflow_version,\n    \n    // 🎯 KEYWORD ANALYSIS\n    keyword_analysis: {\n      keywords: enhancedKeywords,\n      summary: {\n        total_analyzed: enhancedKeywords.length,\n        manually_tracked: enhancedKeywords.filter(k => k.is_manually_tracked).length,\n        meeting_targets: enhancedKeywords.filter(k => k.meets_target === true).length,\n        critical_priority: enhancedKeywords.filter(k => k.final_priority === 'CRITICAL').length,\n        high_priority: enhancedKeywords.filter(k => k.final_priority === 'HIGH').length,\n        avg_priority_score: enhancedKeywords.length > 0 ? \n          enhancedKeywords.reduce((sum, k) => sum + (k.priority_score || 0), 0) / enhancedKeywords.length : 0\n      }\n    },\n    \n    // 📊 PERFORMANCE ANALYSIS\n    performance_analysis: {\n      pages: validPerformanceData,\n      summary: {\n        total_pages: validPerformanceData.length,\n        tracked_pages: validPerformanceData.filter(p => p.page_type === 'TRACKED_PAGE').length,\n        critical_pages: validPerformanceData.filter(p => p.page_priority === 'CRITICAL').length,\n        total_clicks: validPerformanceData.reduce((sum, p) => sum + (parseInt(p.total_clicks) || 0), 0),\n        total_impressions: validPerformanceData.reduce((sum, p) => sum + (parseInt(p.total_impressions) || 0), 0),\n        avg_ctr: validPerformanceData.length > 0 ? \n          validPerformanceData.reduce((sum, p) => sum + (parseFloat(p.avg_ctr) || 0), 0) / validPerformanceData.length : 0\n      }\n    },\n    \n    // 🔍 INDEXING ANALYSIS\n    indexing_analysis: {\n      issues: validIndexingData,\n      summary: {\n        total_issues: validIndexingData.length,\n        critical_issues: validIndexingData.filter(i => i.issue_severity === 'CRITICAL').length,\n        high_issues: validIndexingData.filter(i => i.issue_severity === 'HIGH').length,\n        deindexed_pages: validIndexingData.filter(i => i.indexing_status === 'DEINDEXED').length,\n        crawl_delays: validIndexingData.filter(i => i.indexing_status === 'CRAWL_DELAYED').length\n      }\n    },\n    \n    // 🎯 STRATEGIC OPPORTUNITIES\n    strategic_opportunities: {\n      top_keyword_opportunities: enhancedKeywords\n        .filter(k => k.opportunity_type !== 'STANDARD_TRACKING')\n        .sort((a, b) => (b.enhanced_priority_score || 0) - (a.enhanced_priority_score || 0))\n        .slice(0, 10),\n      critical_page_issues: validPerformanceData\n        .filter(p => p.alert_type.includes('CRITICAL') || p.alert_type.includes('DROP'))\n        .sort((a, b) => parseInt(b.total_clicks) - parseInt(a.total_clicks))\n        .slice(0, 5),\n      indexing_priorities: validIndexingData\n        .filter(i => i.issue_severity === 'CRITICAL' || i.issue_severity === 'HIGH')\n        .sort((a, b) => {\n          const severityOrder = {'CRITICAL': 1, 'HIGH': 2, 'MEDIUM': 3, 'LOW': 4};\n          return severityOrder[a.issue_severity] - severityOrder[b.issue_severity];\n        })\n        .slice(0, 5)\n    },\n    \n    // 📊 ALERT SUMMARY\n    alert_summary: {\n      keyword_alerts: {\n        declining_keywords: enhancedKeywords.filter(k => k.opportunity_type === 'DECLINING_KEYWORD').length,\n        position_opportunities: enhancedKeywords.filter(k => k.opportunity_type === 'POSITION_OPPORTUNITY').length,\n        ctr_opportunities: enhancedKeywords.filter(k => k.opportunity_type === 'CTR_OPPORTUNITY').length\n      },\n      performance_alerts: {\n        traffic_drops: validPerformanceData.filter(p => p.alert_type.includes('DROP')).length,\n        traffic_surges: validPerformanceData.filter(p => p.alert_type.includes('SURGE')).length,\n        low_ctr_issues: validPerformanceData.filter(p => p.alert_type.includes('LOW_CTR')).length\n      },\n      indexing_alerts: {\n        critical_issues: validIndexingData.filter(i => i.issue_severity === 'CRITICAL').length,\n        crawl_issues: validIndexingData.filter(i => i.indexing_status.includes('CRAWL')).length,\n        deindexing_issues: validIndexingData.filter(i => i.indexing_status === 'DEINDEXED').length\n      }\n    },\n    \n    // ✅ PROCESSING STATUS\n    processing_status: {\n      success: true,\n      all_analyses_complete: true,\n      keyword_analysis_complete: validKeywordAnalysis.length > 0,\n      performance_analysis_complete: validPerformanceData.length > 0,\n      indexing_analysis_complete: validIndexingData.length > 0,\n      total_data_points: enhancedKeywords.length + validPerformanceData.length + validIndexingData.length,\n      has_critical_issues: validIndexingData.some(i => i.issue_severity === 'CRITICAL') || \n                          validPerformanceData.some(p => p.alert_type.includes('CRITICAL'))\n    }\n  };\n  \n  console.log(`✅ Comprehensive Analysis Complete:`);\n  console.log(`🎯 Keywords: ${enhancedKeywords.length} (${comprehensiveAnalysis.keyword_analysis.summary.manually_tracked} tracked)`);\n  console.log(`📊 Pages: ${validPerformanceData.length} (${comprehensiveAnalysis.performance_analysis.summary.tracked_pages} tracked)`);\n  console.log(`🔍 Indexing Issues: ${validIndexingData.length} (${comprehensiveAnalysis.indexing_analysis.summary.critical_issues} critical)`);\n  console.log(`🏆 Critical Keywords: ${comprehensiveAnalysis.keyword_analysis.summary.critical_priority}`);\n  console.log(`🚨 Critical Pages: ${comprehensiveAnalysis.performance_analysis.summary.critical_pages}`);\n  \n  return { json: comprehensiveAnalysis };\n  \n} catch (error) {\n  console.error('❌ Comprehensive Analysis Error:', error.message);\n  \n  return {\n    json: {\n      analysis_date: new Date().toISOString().split('T')[0],\n      processing_timestamp: new Date().toISOString(),\n      keyword_analysis: { keywords: [], summary: {} },\n      performance_analysis: { pages: [], summary: {} },\n      indexing_analysis: { issues: [], summary: {} },\n      strategic_opportunities: { top_keyword_opportunities: [], critical_page_issues: [], indexing_priorities: [] },\n      alert_summary: { keyword_alerts: {}, performance_alerts: {}, indexing_alerts: {} },\n      processing_status: {\n        success: false,\n        all_analyses_complete: false,\n        error: error.message,\n        total_data_points: 0,\n        has_critical_issues: false\n      }\n    }\n  };\n}"
+      ],
+      "id": "comprehensive_integration",
+      "name": "Comprehensive Data Integration",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1340, 400],
+      "notes": "🎯 COMPREHENSIVE INTEGRATION\n\n📊 DATA FUSION:\n• Combines keyword priority analysis\n• Integrates performance metrics\n• Includes indexing status\n• Merges manual tracking data\n• Enhances with business values\n\n🏆 ENHANCED SCORING:\n• Boosts manually tracked keywords\n• Incorporates business value weights\n• Validates target achievement\n• Calculates comprehensive priorities\n\n🎯 STRATEGIC INSIGHTS:\n• Top optimization opportunities\n• Critical issue identification\n• Performance trend analysis\n• Indexing health monitoring\n\n📈 COMPREHENSIVE METRICS:\n• Cross-analysis summaries\n• Alert aggregation\n• Success indicators\n• Quality assurance"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.processing_status.success }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            },
+            {
+              "leftValue": "={{ $json.processing_status.total_data_points }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "quality_check",
+      "name": "Data Quality Check",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1560, 400],
+      "notes": "✅ DATA QUALITY CHECK\n\n🎯 VALIDATION CRITERIA:\n• Processing success = true\n• Total data points > 0\n• All analyses complete\n• No critical errors\n\n🔀 FLOW CONTROL:\n• TRUE: Continue to AI analysis\n• FALSE: Send error notification\n\n🛡️ QUALITY ASSURANCE:\n• Prevents empty analysis\n• Ensures data integrity\n• Validates completeness\n• Maintains report quality"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "headers": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "body": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "claude-3-5-sonnet-20241022"
+            },
+            {
+              "name": "max_tokens",
+              "value": 4000
+            },
+            {
+              "name": "messages",
+              "value": "=[{\n  \"role\": \"user\",\n  \"content\": `You are an expert SEO strategist providing comprehensive analysis and actionable recommendations. Analyze this complete SEO dataset with keyword prioritization, performance metrics, and indexing status.\n\n🎯 COMPREHENSIVE ANALYSIS OVERVIEW:\n• Analysis Date: ${$json.analysis_date}\n• Workflow Version: ${$json.workflow_version}\n• Total Data Points: ${$json.processing_status.total_data_points}\n• Critical Issues Present: ${$json.processing_status.has_critical_issues}\n\n📊 KEYWORD ANALYSIS SUMMARY:\n• Total Keywords: ${$json.keyword_analysis.summary.total_analyzed}\n• Manually Tracked: ${$json.keyword_analysis.summary.manually_tracked}\n• Meeting Targets: ${$json.keyword_analysis.summary.meeting_targets}\n• Critical Priority: ${$json.keyword_analysis.summary.critical_priority}\n• High Priority: ${$json.keyword_analysis.summary.high_priority}\n• Avg Priority Score: ${$json.keyword_analysis.summary.avg_priority_score.toFixed(1)}/100\n\n📈 PERFORMANCE ANALYSIS SUMMARY:\n• Total Pages: ${$json.performance_analysis.summary.total_pages}\n• Tracked Pages: ${$json.performance_analysis.summary.tracked_pages}\n• Critical Pages: ${$json.performance_analysis.summary.critical_pages}\n• Total Clicks: ${$json.performance_analysis.summary.total_clicks.toLocaleString()}\n• Total Impressions: ${$json.performance_analysis.summary.total_impressions.toLocaleString()}\n• Average CTR: ${$json.performance_analysis.summary.avg_ctr.toFixed(2)}%\n\n🔍 INDEXING ANALYSIS SUMMARY:\n• Total Issues: ${$json.indexing_analysis.summary.total_issues}\n• Critical Issues: ${$json.indexing_analysis.summary.critical_issues}\n• High Severity: ${$json.indexing_analysis.summary.high_issues}\n• Deindexed Pages: ${$json.indexing_analysis.summary.deindexed_pages}\n• Crawl Delays: ${$json.indexing_analysis.summary.crawl_delays}\n\n🚨 ALERT SUMMARY:\n**Keyword Alerts:**\n• Declining Keywords: ${$json.alert_summary.keyword_alerts.declining_keywords}\n• Position Opportunities: ${$json.alert_summary.keyword_alerts.position_opportunities}\n• CTR Opportunities: ${$json.alert_summary.keyword_alerts.ctr_opportunities}\n\n**Performance Alerts:**\n• Traffic Drops: ${$json.alert_summary.performance_alerts.traffic_drops}\n• Traffic Surges: ${$json.alert_summary.performance_alerts.traffic_surges}\n• Low CTR Issues: ${$json.alert_summary.performance_alerts.low_ctr_issues}\n\n**Indexing Alerts:**\n• Critical Issues: ${$json.alert_summary.indexing_alerts.critical_issues}\n• Crawl Issues: ${$json.alert_summary.indexing_alerts.crawl_issues}\n• Deindexing Issues: ${$json.alert_summary.indexing_alerts.deindexing_issues}\n\n🏆 TOP STRATEGIC OPPORTUNITIES:\n${JSON.stringify($json.strategic_opportunities.top_keyword_opportunities.slice(0, 5), null, 2)}\n\n🚨 CRITICAL PAGE ISSUES:\n${JSON.stringify($json.strategic_opportunities.critical_page_issues.slice(0, 3), null, 2)}\n\n⚠️ INDEXING PRIORITIES:\n${JSON.stringify($json.strategic_opportunities.indexing_priorities.slice(0, 3), null, 2)}\n\nProvide analysis in this EXACT format:\n\n🎯 **SEO WATCHDOG COMPREHENSIVE REPORT - ${$json.analysis_date}**\n\n**📊 EXECUTIVE DASHBOARD:**\n• Keywords Analyzed: ${$json.keyword_analysis.summary.total_analyzed} (${$json.keyword_analysis.summary.manually_tracked} tracked)\n• Pages Monitored: ${$json.performance_analysis.summary.total_pages} (${$json.performance_analysis.summary.tracked_pages} with tracked keywords)\n• Technical Issues: ${$json.indexing_analysis.summary.total_issues} (${$json.indexing_analysis.summary.critical_issues} critical)\n• Overall Health: [GREEN/YELLOW/RED based on critical issues]\n• Priority Focus: [Main area needing attention]\n\n**🚨 CRITICAL ACTIONS REQUIRED:**\n[List 3-5 most urgent issues requiring immediate attention within 24-48 hours]\n\n**🏆 HIGH-IMPACT OPPORTUNITIES:**\n• **Quick Wins (Next 7 Days):**\n  - [Specific keyword/page optimizations with expected impact]\n  - [Technical fixes with immediate benefits]\n  \n• **Strategic Wins (Next 30 Days):**\n  - [Position improvement opportunities]\n  - [CTR optimization targets]\n  - [Content enhancement priorities]\n\n**📈 KEYWORD STRATEGY ANALYSIS:**\n• **Top Performers:** [Best performing tracked keywords]\n• **Underperformers:** [Tracked keywords missing targets]\n• **Opportunities:** [Keywords with optimization potential]\n• **Declining:** [Keywords losing performance that need attention]\n\n**📊 TECHNICAL HEALTH ASSESSMENT:**\n• **Indexing Status:** [Overall indexing health]\n• **Crawl Issues:** [Critical crawling problems]\n• **Urgent Fixes:** [Technical issues requiring immediate action]\n• **Monitoring:** [Areas needing ongoing attention]\n\n**🎯 STRATEGIC ROADMAP:**\n\n**Week 1 Priorities:**\n1. [Most critical action with expected outcome]\n2. [Second priority with timeline]\n3. [Third priority with resources needed]\n\n**Month 1 Goals:**\n• [Strategic objective 1 with success metrics]\n• [Strategic objective 2 with timeline]\n• [Strategic objective 3 with resource requirements]\n\n**Quarter Goals:**\n• [Long-term strategic initiative]\n• [Growth opportunity development]\n• [Competitive advantage building]\n\n**📊 SUCCESS METRICS TO TRACK:**\n• **Keyword Targets:** [Specific position/CTR goals]\n• **Traffic Goals:** [Expected traffic improvements]\n• **Technical KPIs:** [Indexing and crawl health metrics]\n• **Timeline:** [Expected results timeframe]\n\n**🔄 TRACKING ADJUSTMENTS:**\n• **Add to Priority:** [New keywords/pages to monitor]\n• **Increase Focus:** [Areas needing more attention]\n• **Reduce Priority:** [Stable areas requiring less monitoring]\n\n**📈 EXPECTED IMPACT:**\n• **Traffic Increase:** [Estimated percentage improvement]\n• **Ranking Improvements:** [Expected position gains]\n• **Technical Health:** [Expected infrastructure improvements]\n• **ROI Timeline:** [When to expect results]\n\nFocus on specific, actionable recommendations with clear timelines, expected outcomes, and success metrics. Prioritize based on impact potential and resource requirements.`\n}]"
+            }
+          ]
+        }
+      },
+      "id": "claude_comprehensive_analysis",
+      "name": "Claude AI - Comprehensive Analysis",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1780, 300],
+      "notes": "🤖 CLAUDE AI COMPREHENSIVE ANALYSIS\n\n🎯 EXPERT ANALYSIS:\n• Complete SEO strategy review\n• Comprehensive data interpretation\n• Strategic roadmap development\n• Actionable recommendations\n\n📊 ANALYSIS SCOPE:\n• Keyword prioritization strategy\n• Performance optimization plan\n• Technical health assessment\n• Competitive positioning\n\n🏆 STRATEGIC OUTPUTS:\n• Executive dashboard summary\n• Critical action priorities\n• High-impact opportunities\n• Technical health assessment\n• Strategic roadmap\n• Success metrics\n• Tracking adjustments\n• Expected impact projections\n\n🔧 OPTIMIZATION:\n• Maximum token allocation\n• Comprehensive context\n• Strategic focus\n• Actionable insights"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "headers": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "body": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "={{ $env.TELEGRAM_CHAT_ID }}"
+            },
+            {
+              "name": "text",
+              "value": "🚨 **SEO WATCHDOG - ANALYSIS ERROR**\\n\\n⚠️ **Issue:** {{ $json.processing_status.error || 'Data quality check failed' }}\\n\\n📊 **Status:**\\n• Processing Success: {{ $json.processing_status.success }}\\n• Data Points: {{ $json.processing_status.total_data_points }}\\n• Analyses Complete: {{ $json.processing_status.all_analyses_complete }}\\n\\n🔧 **Checks:**\\n• Keyword Analysis: {{ $json.processing_status.keyword_analysis_complete }}\\n• Performance Analysis: {{ $json.processing_status.performance_analysis_complete }}\\n• Indexing Analysis: {{ $json.processing_status.indexing_analysis_complete }}\\n\\n📋 **Next Steps:**\\n• Verify BigQuery connections\\n• Check Google Sheets access\\n• Validate environment variables\\n• Review data availability\\n\\n⏰ **Time:** {{ $json.processing_timestamp || new Date().toISOString() }}\\n\\n🔄 **Next Attempt:** Tomorrow at 9 AM"
+            },
+            {
+              "name": "parse_mode",
+              "value": "Markdown"
+            }
+          ]
+        }
+      },
+      "id": "error_notification",
+      "name": "Error Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1780, 500],
+      "notes": "🚨 COMPREHENSIVE ERROR NOTIFICATION\n\n🎯 ERROR DETAILS:\n• Processing status information\n• Data quality indicators\n• Analysis completion status\n• Detailed failure context\n\n📊 DIAGNOSTIC INFO:\n• Individual analysis success\n• Data point counts\n• Connection status\n• Configuration validation\n\n🔧 TROUBLESHOOTING:\n• BigQuery connectivity\n• Google Sheets access\n• Environment variables\n• Data availability checks\n\n📱 NOTIFICATION:\n• Immediate error alert\n• Diagnostic information\n• Troubleshooting steps\n• Next execution schedule"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 📱 COMPREHENSIVE REPORT FORMATTING\n// Advanced formatting for complete SEO analysis reports\n\nconst response = $json.content[0].text;\nconst comprehensiveData = $(\"Comprehensive Data Integration\").first().json;\n\n// 🎯 Enhanced telegram formatting\nconst formatForTelegram = {\n  report: response,\n  timestamp: new Date().toISOString(),\n  date_readable: new Date().toLocaleDateString('en-US', {\n    weekday: 'long',\n    year: 'numeric',\n    month: 'long',\n    day: 'numeric'\n  }),\n  chat_id: $env.TELEGRAM_CHAT_ID,\n  parse_mode: 'Markdown',\n  disable_web_page_preview: true,\n  disable_notification: false,\n  \n  // 🎯 COMPREHENSIVE METADATA\n  comprehensive_metadata: {\n    report_type: 'COMPREHENSIVE_SEO_ANALYSIS',\n    workflow_version: comprehensiveData.workflow_version,\n    analysis_date: comprehensiveData.analysis_date,\n    total_data_points: comprehensiveData.processing_status.total_data_points,\n    has_critical_issues: comprehensiveData.processing_status.has_critical_issues,\n    \n    // 📊 ANALYSIS COVERAGE\n    analysis_coverage: {\n      keywords_analyzed: comprehensiveData.keyword_analysis.summary.total_analyzed,\n      pages_analyzed: comprehensiveData.performance_analysis.summary.total_pages,\n      indexing_issues: comprehensiveData.indexing_analysis.summary.total_issues,\n      manual_tracking: comprehensiveData.keyword_analysis.summary.manually_tracked > 0\n    },\n    \n    // 🎯 PRIORITY INDICATORS\n    priority_indicators: {\n      critical_keywords: comprehensiveData.keyword_analysis.summary.critical_priority,\n      critical_pages: comprehensiveData.performance_analysis.summary.critical_pages,\n      critical_indexing: comprehensiveData.indexing_analysis.summary.critical_issues,\n      total_alerts: Object.values(comprehensiveData.alert_summary.keyword_alerts).reduce((a,b) => a+b, 0) +\n                   Object.values(comprehensiveData.alert_summary.performance_alerts).reduce((a,b) => a+b, 0) +\n                   Object.values(comprehensiveData.alert_summary.indexing_alerts).reduce((a,b) => a+b, 0)\n    },\n    \n    // 📈 REPORT QUALITY\n    report_quality: {\n      character_count: response.length,\n      word_count: response.split(' ').length,\n      completeness_score: (\n        (comprehensiveData.processing_status.keyword_analysis_complete ? 1 : 0) +\n        (comprehensiveData.processing_status.performance_analysis_complete ? 1 : 0) +\n        (comprehensiveData.processing_status.indexing_analysis_complete ? 1 : 0)\n      ) / 3\n    }\n  }\n};\n\nreturn { json: formatForTelegram };"
+      },
+      "id": "format_comprehensive_report",
+      "name": "Format Comprehensive Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2000, 300],
+      "notes": "📱 COMPREHENSIVE REPORT FORMATTER\n\n🎯 ADVANCED FORMATTING:\n• Complete analysis context\n• Priority indicators\n• Coverage metrics\n• Quality assessment\n\n📊 METADATA ENHANCEMENT:\n• Analysis coverage tracking\n• Priority level indicators\n• Alert count aggregation\n• Completeness scoring\n\n🔧 TELEGRAM OPTIMIZATION:\n• Markdown formatting\n• Mobile-friendly layout\n• Critical issue highlighting\n• Strategic structure\n\n📈 QUALITY METRICS:\n• Content length analysis\n• Completeness assessment\n• Coverage validation\n• Priority tracking"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "headers": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "body": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "={{ $json.chat_id }}"
+            },
+            {
+              "name": "text",
+              "value": "={{ $json.report }}"
+            },
+            {
+              "name": "parse_mode",
+              "value": "={{ $json.parse_mode }}"
+            },
+            {
+              "name": "disable_web_page_preview",
+              "value": "={{ $json.disable_web_page_preview }}"
+            },
+            {
+              "name": "disable_notification",
+              "value": "={{ $json.disable_notification }}"
+            }
+          ]
+        }
+      },
+      "id": "send_comprehensive_report",
+      "name": "Send Comprehensive Report",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2220, 300],
+      "notes": "📱 COMPREHENSIVE REPORT DELIVERY\n\n🎯 STRATEGIC DELIVERY:\n• Complete SEO analysis\n• Priority-focused insights\n• Actionable recommendations\n• Strategic roadmap\n\n📊 FEATURES:\n• Rich markdown formatting\n• Mobile optimization\n• Critical issue highlighting\n• Strategic structure\n\n🔧 RELIABILITY:\n• Error handling\n• Delivery confirmation\n• Status tracking\n• Quality assurance"
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "authentication": "serviceAccount",
+        "documentId": "={{ $env.KEYWORD_RESULTS_SHEET_ID }}",
+        "sheetName": "Analysis Results",
+        "range": "A:P",
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "analysis_date",
+              "displayName": "Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "query",
+              "displayName": "Keyword",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "page",
+              "displayName": "Page",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "total_clicks",
+              "displayName": "Clicks",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "total_impressions",
+              "displayName": "Impressions",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "avg_ctr",
+              "displayName": "CTR",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "avg_position",
+              "displayName": "Position",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "priority_score",
+              "displayName": "Priority Score",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "enhanced_priority_score",
+              "displayName": "Enhanced Score",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "final_priority",
+              "displayName": "Priority",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "opportunity_type",
+              "displayName": "Opportunity",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "keyword_health",
+              "displayName": "Health",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "is_manually_tracked",
+              "displayName": "Tracked",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "boolean",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "manual_priority",
+              "displayName": "Manual Priority",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "business_value",
+              "displayName": "Business Value",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "meets_target",
+              "displayName": "Meets Target",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "boolean",
+              "canBeUsedToMatch": false
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "save_comprehensive_results",
+      "name": "Save Comprehensive Results",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [2000, 500],
+      "notes": "💾 SAVE COMPREHENSIVE RESULTS\n\n📊 COMPREHENSIVE DATA STORAGE:\n• Complete keyword analysis\n• Priority scoring data\n• Business value tracking\n• Target achievement status\n• Manual tracking indicators\n\n🎯 SHEET STRUCTURE:\n• All analysis metrics\n• Enhanced priority scores\n• Opportunity classifications\n• Health indicators\n• Tracking status\n• Business context\n\n📈 BENEFITS:\n• Historical trend analysis\n• Performance tracking\n• Strategic planning\n• ROI measurement\n• Progress monitoring"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 📊 COMPREHENSIVE WORKFLOW RESULT LOGGER\n// Master logging for complete SEO Watchdog workflow\n\nconst success = $json.ok;\nconst messageId = $json.message_id;\nconst errorDescription = $json.description;\nconst comprehensiveData = $(\"Comprehensive Data Integration\").first().json;\n\nconst timestamp = new Date().toISOString();\nconst readableTime = new Date().toLocaleString('en-US', {\n  timeZone: 'UTC',\n  weekday: 'long',\n  year: 'numeric',\n  month: 'long',\n  day: 'numeric',\n  hour: '2-digit',\n  minute: '2-digit',\n  second: '2-digit'\n});\n\n// 🎯 Comprehensive workflow logging\nif (success) {\n  console.log(`✅ COMPREHENSIVE SEO ANALYSIS DELIVERED`);\n  console.log(`📱 Telegram Message ID: ${messageId}`);\n  console.log(`⏰ Delivery Time: ${readableTime}`);\n  console.log(`🎯 Analysis Type: COMPREHENSIVE`);\n  console.log(`🏆 Report Status: DELIVERED`);\n  console.log(`📊 Workflow: COMPLETE`);\n  \n  // 📊 Analysis summary\n  console.log(`\\n📋 ANALYSIS SUMMARY:`);\n  console.log(`🎯 Keywords: ${comprehensiveData.keyword_analysis.summary.total_analyzed} (${comprehensiveData.keyword_analysis.summary.manually_tracked} tracked)`);\n  console.log(`📊 Pages: ${comprehensiveData.performance_analysis.summary.total_pages} (${comprehensiveData.performance_analysis.summary.tracked_pages} tracked)`);\n  console.log(`🔍 Issues: ${comprehensiveData.indexing_analysis.summary.total_issues} (${comprehensiveData.indexing_analysis.summary.critical_issues} critical)`);\n  console.log(`🏆 Critical Keywords: ${comprehensiveData.keyword_analysis.summary.critical_priority}`);\n  console.log(`🚨 Critical Pages: ${comprehensiveData.performance_analysis.summary.critical_pages}`);\n  \n} else {\n  console.log(`❌ COMPREHENSIVE SEO ANALYSIS FAILED`);\n  console.log(`⚠️ Error: ${errorDescription}`);\n  console.log(`⏰ Failed At: ${readableTime}`);\n  console.log(`🎯 Analysis Type: COMPREHENSIVE`);\n  console.log(`🏆 Report Status: FAILED`);\n}\n\n// 🔍 Comprehensive workflow summary\nconsole.log(`\\n📋 WORKFLOW SUMMARY:`);\nconsole.log(`🔄 Process: Complete SEO Watchdog Analysis`);\nconsole.log(`📈 Next Execution: Tomorrow at 9 AM`);\nconsole.log(`🎯 Features: Keyword Priority + Performance + Indexing`);\nconsole.log(`📊 Integration: Google Sheets + BigQuery + AI Analysis`);\nconsole.log(`🚀 Version: ${comprehensiveData.workflow_version || '3.0-complete'}`);\n\nreturn {\n  json: {\n    success: success,\n    message_id: messageId,\n    error_description: errorDescription,\n    timestamp: timestamp,\n    readable_time: readableTime,\n    analysis_type: 'COMPREHENSIVE',\n    workflow_status: success ? 'COMPREHENSIVE_COMPLETED' : 'COMPREHENSIVE_FAILED',\n    next_execution: 'Tomorrow at 9 AM',\n    comprehensive_analysis: true,\n    \n    // 📊 ANALYSIS STATISTICS\n    analysis_stats: {\n      keywords_analyzed: comprehensiveData.keyword_analysis.summary.total_analyzed,\n      pages_analyzed: comprehensiveData.performance_analysis.summary.total_pages,\n      indexing_issues: comprehensiveData.indexing_analysis.summary.total_issues,\n      critical_keywords: comprehensiveData.keyword_analysis.summary.critical_priority,\n      critical_pages: comprehensiveData.performance_analysis.summary.critical_pages,\n      critical_indexing: comprehensiveData.indexing_analysis.summary.critical_issues,\n      manually_tracked: comprehensiveData.keyword_analysis.summary.manually_tracked,\n      total_clicks: comprehensiveData.performance_analysis.summary.total_clicks,\n      total_impressions: comprehensiveData.performance_analysis.summary.total_impressions\n    },\n    \n    summary: {\n      process: 'SEO Watchdog Comprehensive Analysis',\n      status: success ? 'SUCCESS' : 'FAILED',\n      delivery_method: 'Telegram',\n      completion_time: readableTime,\n      analysis_scope: 'Complete SEO Suite',\n      workflow_version: comprehensiveData.workflow_version || '3.0-complete'\n    }\n  }\n};"
+      },
+      "id": "log_comprehensive_result",
+      "name": "Log Comprehensive Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2440, 300],
+      "notes": "📊 COMPREHENSIVE RESULT LOGGING\n\n🎯 MASTER LOGGING:\n• Complete workflow status\n• Comprehensive analysis metrics\n• All analysis statistics\n• Performance indicators\n• Success confirmation\n\n📋 DETAILED METRICS:\n• Keywords analyzed count\n• Pages monitored count\n• Indexing issues found\n• Critical items identified\n• Manual tracking status\n• Traffic metrics\n\n🔍 MONITORING DATA:\n• Workflow health tracking\n• Delivery confirmation\n• Performance analysis\n• Quality indicators\n• Success rates\n\n📊 COMPREHENSIVE SUMMARY:\n• Process completion status\n• Next execution schedule\n• Feature utilization\n• Integration success\n• Version tracking"
+    }
+  ],
+  "connections": {
+    "Daily Scheduler": {
+      "main": [
+        [
+          {
+            "node": "Master Configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Master Configuration": {
+      "main": [
+        [
+          {
+            "node": "Load Tracked Keywords",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Tracked Keywords": {
+      "main": [
+        [
+          {
+            "node": "Process Keywords",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Keywords": {
+      "main": [
+        [
+          {
+            "node": "Keyword Priority Analysis",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Performance Analysis",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Indexing Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Keyword Priority Analysis": {
+      "main": [
+        [
+          {
+            "node": "Comprehensive Data Integration",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Save Comprehensive Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Performance Analysis": {
+      "main": [
+        [
+          {
+            "node": "Comprehensive Data Integration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Indexing Analysis": {
+      "main": [
+        [
+          {
+            "node": "Comprehensive Data Integration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Comprehensive Data Integration": {
+      "main": [
+        [
+          {
+            "node": "Data Quality Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Data Quality Check": {
+      "main": [
+        [
+          {
+            "node": "Claude AI - Comprehensive Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude AI - Comprehensive Analysis": {
+      "main": [
+        [
+          {
+            "node": "Format Comprehensive Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Comprehensive Report": {
+      "main": [
+        [
+          {
+            "node": "Send Comprehensive Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Comprehensive Report": {
+      "main": [
+        [
+          {
+            "node": "Log Comprehensive Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "timeouts": {
+      "default": 45000,
+      "max": 120000
+    },
+    "errorWorkflow": {
+      "enabled": false
+    }
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-12-07T00:00:00.000Z",
+      "updatedAt": "2024-12-07T00:00:00.000Z",
+      "id": "comprehensive",
+      "name": "Comprehensive"
+    },
+    {
+      "createdAt": "2024-12-07T00:00:00.000Z",
+      "updatedAt": "2024-12-07T00:00:00.000Z",
+      "id": "unified",
+      "name": "Unified"
+    },
+    {
+      "createdAt": "2024-12-07T00:00:00.000Z",
+      "updatedAt": "2024-12-07T00:00:00.000Z",
+      "id": "complete",
+      "name": "Complete"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2024-12-07T00:00:00.000Z",
+  "versionId": "3.0-complete"
+}

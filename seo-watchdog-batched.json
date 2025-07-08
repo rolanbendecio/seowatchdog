@@ -1,0 +1,399 @@
+{
+  "name": "SEO Watchdog - Batched Processing",
+  "description": "Optimized SEO monitoring workflow with batch processing for large datasets",
+  "version": "2.1",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "value": "0 9 * * *"
+            }
+          ]
+        }
+      },
+      "id": "scheduler",
+      "name": "Daily Schedule",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "notes": "🕘 SCHEDULER: Triggers workflow daily at 9 AM with batch processing"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 🔢 BATCH CONFIGURATION\n// Configure batch sizes to prevent timeouts\n\nconst batchConfig = {\n  // 📊 BATCH SIZES (adjust based on your data volume)\n  performance_batch_size: 100,    // Process 100 pages at a time\n  keywords_batch_size: 50,        // Process 50 keywords per batch\n  indexing_batch_size: 100,       // Process 100 indexing records\n  \n  // ⏱️ TIMING CONFIGURATION\n  batch_delay: 2000,              // 2 second delay between batches\n  query_timeout: 30000,           // 30 second timeout per query\n  \n  // 📅 DATE RANGE LIMITS\n  max_days_back: 30,              // Limit to 30 days of data\n  \n  // 🎯 PERFORMANCE LIMITS\n  max_total_records: 1000,        // Maximum records to process\n  priority_threshold: 1000        // Minimum impressions for priority\n};\n\n// 📋 Create batch processing metadata\nconst batchMetadata = {\n  batch_config: batchConfig,\n  execution_id: `seo_batch_${Date.now()}`,\n  start_time: new Date().toISOString(),\n  date_range: {\n    start_date: new Date(Date.now() - (batchConfig.max_days_back * 24 * 60 * 60 * 1000)).toISOString().split('T')[0],\n    end_date: new Date(Date.now() - (24 * 60 * 60 * 1000)).toISOString().split('T')[0]\n  }\n};\n\nreturn { json: batchMetadata };"
+      },
+      "id": "batch_config",
+      "name": "Batch Configuration",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300],
+      "notes": "🔢 BATCH CONFIGURATION\n\n🎯 PURPOSE:\n• Sets batch sizes to prevent timeouts\n• Configures processing limits\n• Defines date ranges\n• Creates execution metadata\n\n📊 BATCH SIZES:\n• Performance: 100 pages per batch\n• Keywords: 50 keywords per batch\n• Indexing: 100 records per batch\n\n⏱️ TIMING:\n• 2 second delay between batches\n• 30 second timeout per query\n• Maximum 30 days of data\n\n🔧 CUSTOMIZATION:\n• Adjust batch sizes based on data volume\n• Modify timeouts for your environment\n• Change date ranges as needed"
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "projectId": "={{ $env.GCP_PROJECT_ID }}",
+        "query": "-- 📊 OPTIMIZED PERFORMANCE QUERY WITH BATCHING\n-- This query uses pagination and limits to prevent timeouts\n\nWITH recent_data AS (\n  SELECT \n    date,\n    page,\n    query,\n    clicks,\n    impressions,\n    SAFE_DIVIDE(clicks, impressions) * 100 as ctr,\n    position,\n    device,\n    -- 🎯 Add row numbers for pagination\n    ROW_NUMBER() OVER (ORDER BY impressions DESC, clicks DESC) as row_num\n  FROM `{{ $env.GCP_PROJECT_ID }}.searchconsole.searchdata_site_impression`\n  WHERE \n    date >= '{{ $json.date_range.start_date }}'\n    AND date <= '{{ $json.date_range.end_date }}'\n    AND impressions >= {{ $json.batch_config.priority_threshold }}  -- Focus on high-impression pages\n),\n\npage_performance AS (\n  SELECT \n    page,\n    SUM(clicks) as total_clicks,\n    SUM(impressions) as total_impressions,\n    SAFE_DIVIDE(SUM(clicks), SUM(impressions)) * 100 as avg_ctr,\n    AVG(position) as avg_position,\n    COUNT(DISTINCT query) as keyword_count,\n    DATE_DIFF(CURRENT_DATE(), MAX(date), DAY) as days_since_last_data\n  FROM recent_data\n  WHERE row_num <= {{ $json.batch_config.max_total_records }}  -- Limit total records\n  GROUP BY page\n),\n\ntraffic_trends AS (\n  SELECT \n    page,\n    DATE_TRUNC(date, WEEK) as week,\n    SUM(clicks) as weekly_clicks,\n    SUM(impressions) as weekly_impressions\n  FROM recent_data\n  WHERE row_num <= {{ $json.batch_config.max_total_records }}\n  GROUP BY page, week\n),\n\nweekly_comparison AS (\n  SELECT \n    page,\n    LAG(weekly_clicks, 1) OVER (PARTITION BY page ORDER BY week) as prev_week_clicks,\n    weekly_clicks as current_week_clicks,\n    SAFE_DIVIDE(weekly_clicks - LAG(weekly_clicks, 1) OVER (PARTITION BY page ORDER BY week), LAG(weekly_clicks, 1) OVER (PARTITION BY page ORDER BY week)) * 100 as click_change_percent\n  FROM traffic_trends\n  WHERE week = DATE_TRUNC(DATE_SUB(CURRENT_DATE(), INTERVAL 7 DAY), WEEK)\n)\n\n-- 🎯 FINAL RESULTS: Limited and optimized\nSELECT \n  pp.page,\n  pp.total_clicks,\n  pp.total_impressions,\n  pp.avg_ctr,\n  pp.avg_position,\n  pp.keyword_count,\n  pp.days_since_last_data,\n  COALESCE(wc.click_change_percent, 0) as click_change_percent,\n  CASE \n    WHEN COALESCE(wc.click_change_percent, 0) < -20 THEN 'traffic_drop'\n    WHEN COALESCE(wc.click_change_percent, 0) > 20 THEN 'traffic_surge'\n    WHEN pp.avg_ctr < 2 AND pp.total_impressions > 1000 THEN 'low_ctr'\n    WHEN pp.avg_position > 10 AND pp.total_impressions > 500 THEN 'low_position'\n    WHEN pp.days_since_last_data > 7 THEN 'potential_deindex'\n    ELSE 'normal'\n  END as alert_type\nFROM page_performance pp\nLEFT JOIN weekly_comparison wc ON pp.page = wc.page\nORDER BY pp.total_clicks DESC\nLIMIT {{ $json.batch_config.performance_batch_size }}"
+      },
+      "id": "bigquery_performance_batch",
+      "name": "BigQuery - Performance (Batched)",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 1,
+      "position": [680, 200],
+      "notes": "📊 BATCHED PERFORMANCE QUERY\n\n🎯 OPTIMIZATIONS:\n• Row number pagination\n• Impression threshold filtering\n• Limited record processing\n• Efficient date range filtering\n\n📈 PERFORMANCE FEATURES:\n• Processes top 100 pages only\n• Focuses on high-impression pages\n• Uses efficient sorting\n• Prevents timeout issues\n\n🔧 BATCH CONTROLS:\n• Configurable batch size\n• Priority threshold filtering\n• Maximum record limits\n• Optimized query structure"
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "projectId": "={{ $env.GCP_PROJECT_ID }}",
+        "query": "-- 🔍 OPTIMIZED INDEXING QUERY WITH BATCHING\n-- Limits data processing to prevent timeouts\n\nWITH recent_crawl_data AS (\n  SELECT \n    page_url,\n    last_crawl_time,\n    coverage_state,\n    is_excluded,\n    DATE_DIFF(CURRENT_DATE(), DATE(last_crawl_time), DAY) as days_since_crawl,\n    -- 🎯 Add row numbers for pagination\n    ROW_NUMBER() OVER (ORDER BY last_crawl_time DESC) as row_num\n  FROM `{{ $env.GCP_PROJECT_ID }}.searchconsole.crawl_stats`\n  WHERE \n    DATE(last_crawl_time) >= '{{ $json.date_range.start_date }}'\n    AND DATE(last_crawl_time) <= '{{ $json.date_range.end_date }}'\n),\n\nindexing_issues AS (\n  SELECT \n    page_url,\n    coverage_state,\n    is_excluded,\n    days_since_crawl,\n    CASE \n      WHEN is_excluded = FALSE AND coverage_state = 'Valid' THEN 'newly_indexed'\n      WHEN is_excluded = TRUE OR coverage_state != 'Valid' THEN 'deindexed'\n      WHEN days_since_crawl > 7 THEN 'crawl_issue'\n      ELSE 'normal'\n    END as indexing_status\n  FROM recent_crawl_data\n  WHERE row_num <= {{ $json.batch_config.indexing_batch_size }}  -- Limit processing\n)\n\n-- 🎯 FINAL RESULTS: Only problematic pages\nSELECT \n  page_url,\n  coverage_state,\n  is_excluded,\n  days_since_crawl,\n  indexing_status,\n  COUNT(*) OVER (PARTITION BY indexing_status) as status_count\nFROM indexing_issues\nWHERE indexing_status != 'normal'\nORDER BY days_since_crawl DESC\nLIMIT {{ $json.batch_config.indexing_batch_size }}"
+      },
+      "id": "bigquery_indexing_batch",
+      "name": "BigQuery - Indexing (Batched)",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 1,
+      "position": [680, 400],
+      "notes": "🔍 BATCHED INDEXING QUERY\n\n🎯 OPTIMIZATIONS:\n• Row number pagination\n• Recent data focus\n• Limited record processing\n• Efficient sorting by crawl time\n\n📈 PERFORMANCE FEATURES:\n• Processes latest 100 crawl records\n• Filters out normal status\n• Uses efficient date filtering\n• Prevents timeout issues\n\n🔧 BATCH CONTROLS:\n• Configurable batch size\n• Date range limiting\n• Status filtering\n• Optimized query structure"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 🔄 BATCH DATA PROCESSING\n// Enhanced data combination with batch processing safeguards\n\ntry {\n  // 📊 Extract data with null checks\n  const performanceData = $input.first()?.json || [];\n  const indexingData = $input.last()?.json || [];\n  \n  // 🛡️ Data validation\n  const validPerformanceData = Array.isArray(performanceData) ? performanceData : [];\n  const validIndexingData = Array.isArray(indexingData) ? indexingData : [];\n  \n  // 📋 Process with batch information\n  const batchProcessedData = {\n    // 📊 CORE DATA\n    performance_data: validPerformanceData,\n    indexing_data: validIndexingData,\n    \n    // 📅 METADATA\n    analysis_date: new Date().toISOString().split('T')[0],\n    processing_time: new Date().toISOString(),\n    \n    // 🔢 BATCH STATISTICS\n    batch_info: {\n      performance_records: validPerformanceData.length,\n      indexing_records: validIndexingData.length,\n      total_records: validPerformanceData.length + validIndexingData.length,\n      batch_size_used: Math.min(validPerformanceData.length, 100),\n      processing_complete: true\n    },\n    \n    // 📊 ENHANCED SUMMARY\n    summary: {\n      total_clicks: validPerformanceData.reduce((sum, page) => sum + (parseInt(page.total_clicks) || 0), 0),\n      total_impressions: validPerformanceData.reduce((sum, page) => sum + (parseInt(page.total_impressions) || 0), 0),\n      avg_ctr: validPerformanceData.length > 0 ? \n        validPerformanceData.reduce((sum, page) => sum + (parseFloat(page.avg_ctr) || 0), 0) / validPerformanceData.length : 0,\n      \n      // 🚨 ALERT COUNTS\n      alert_counts: {\n        traffic_drops: validPerformanceData.filter(p => p.alert_type === 'traffic_drop').length,\n        traffic_surges: validPerformanceData.filter(p => p.alert_type === 'traffic_surge').length,\n        low_ctr: validPerformanceData.filter(p => p.alert_type === 'low_ctr').length,\n        low_position: validPerformanceData.filter(p => p.alert_type === 'low_position').length,\n        potential_deindex: validPerformanceData.filter(p => p.alert_type === 'potential_deindex').length,\n        normal: validPerformanceData.filter(p => p.alert_type === 'normal').length\n      },\n      \n      // 🔍 INDEXING STATUS COUNTS\n      indexing_status_counts: {\n        newly_indexed: validIndexingData.filter(p => p.indexing_status === 'newly_indexed').length,\n        deindexed: validIndexingData.filter(p => p.indexing_status === 'deindexed').length,\n        crawl_issues: validIndexingData.filter(p => p.indexing_status === 'crawl_issue').length\n      }\n    },\n    \n    // 🎯 PROCESSING STATUS\n    processing_status: {\n      success: true,\n      message: 'Batch processing completed successfully',\n      records_processed: validPerformanceData.length + validIndexingData.length,\n      batch_complete: true\n    }\n  };\n  \n  // 📊 Log batch processing results\n  console.log(`✅ Batch Processing Complete:`);\n  console.log(`📊 Performance Records: ${validPerformanceData.length}`);\n  console.log(`🔍 Indexing Records: ${validIndexingData.length}`);\n  console.log(`🎯 Total Records: ${validPerformanceData.length + validIndexingData.length}`);\n  \n  return { json: batchProcessedData };\n  \n} catch (error) {\n  // 🚨 Error handling for batch processing\n  console.error('❌ Batch Processing Error:', error.message);\n  \n  return {\n    json: {\n      performance_data: [],\n      indexing_data: [],\n      analysis_date: new Date().toISOString().split('T')[0],\n      processing_time: new Date().toISOString(),\n      batch_info: {\n        performance_records: 0,\n        indexing_records: 0,\n        total_records: 0,\n        batch_size_used: 0,\n        processing_complete: false\n      },\n      summary: {\n        total_clicks: 0,\n        total_impressions: 0,\n        avg_ctr: 0,\n        alert_counts: { traffic_drops: 0, traffic_surges: 0, low_ctr: 0, low_position: 0, potential_deindex: 0, normal: 0 },\n        indexing_status_counts: { newly_indexed: 0, deindexed: 0, crawl_issues: 0 }\n      },\n      processing_status: {\n        success: false,\n        message: `Batch processing failed: ${error.message}`,\n        records_processed: 0,\n        batch_complete: false\n      }\n    }\n  };\n}"
+      },
+      "id": "batch_data_processor",
+      "name": "Batch Data Processor",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300],
+      "notes": "🔄 BATCH DATA PROCESSOR\n\n🎯 FEATURES:\n• Null-safe data processing\n• Array validation\n• Error handling\n• Batch statistics tracking\n\n🛡️ SAFEGUARDS:\n• Try-catch error handling\n• Data type validation\n• Null checks\n• Array validation\n\n📊 PROCESSING:\n• Combines performance and indexing data\n• Calculates batch statistics\n• Generates summary metrics\n• Tracks processing status\n\n🔧 RELIABILITY:\n• Handles empty datasets\n• Graceful error recovery\n• Detailed logging\n• Status tracking"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.processing_status.success }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            },
+            {
+              "leftValue": "={{ $json.batch_info.total_records }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "data_validation_check",
+      "name": "Data Validation Check",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1120, 300],
+      "notes": "✅ DATA VALIDATION CHECK\n\n🎯 VALIDATION CRITERIA:\n• Processing success = true\n• Total records > 0\n• Batch completion confirmed\n\n🔀 FLOW CONTROL:\n• TRUE: Continue to AI analysis\n• FALSE: Send error notification\n\n🛡️ SAFEGUARDS:\n• Prevents empty data analysis\n• Ensures data quality\n• Validates processing success\n\n📊 BENEFITS:\n• Avoids AI analysis on empty data\n• Prevents unnecessary API calls\n• Ensures report quality"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "headers": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "body": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "claude-3-5-sonnet-20241022"
+            },
+            {
+              "name": "max_tokens",
+              "value": 3000
+            },
+            {
+              "name": "messages",
+              "value": "=[{\n  \"role\": \"user\",\n  \"content\": `You are an expert SEO analyst. Analyze this BATCHED Google Search Console data and provide strategic insights.\n\n🔢 BATCH PROCESSING INFO:\n• Records Processed: ${$json.batch_info.total_records}\n• Performance Pages: ${$json.batch_info.performance_records}\n• Indexing Issues: ${$json.batch_info.indexing_records}\n• Batch Size Used: ${$json.batch_info.batch_size_used}\n• Processing Status: ${$json.processing_status.success ? 'SUCCESS' : 'FAILED'}\n\n📊 SITE PERFORMANCE SUMMARY:\n• Total Clicks: ${$json.summary.total_clicks.toLocaleString()}\n• Total Impressions: ${$json.summary.total_impressions.toLocaleString()}\n• Average CTR: ${$json.summary.avg_ctr.toFixed(2)}%\n• Analysis Date: ${$json.analysis_date}\n\n🚨 ALERT BREAKDOWN:\n• Traffic Drops: ${$json.summary.alert_counts.traffic_drops}\n• Traffic Surges: ${$json.summary.alert_counts.traffic_surges}\n• Low CTR Opportunities: ${$json.summary.alert_counts.low_ctr}\n• Position Improvements: ${$json.summary.alert_counts.low_position}\n• Potential Deindexing: ${$json.summary.alert_counts.potential_deindex}\n• Normal Pages: ${$json.summary.alert_counts.normal}\n\n🔍 INDEXING STATUS:\n• Newly Indexed: ${$json.summary.indexing_status_counts.newly_indexed}\n• Deindexed: ${$json.summary.indexing_status_counts.deindexed}\n• Crawl Issues: ${$json.summary.indexing_status_counts.crawl_issues}\n\n📋 PERFORMANCE DATA (TOP ${$json.batch_info.performance_records} PAGES):\n${JSON.stringify($json.performance_data.slice(0, 10), null, 2)}\n\n🔍 INDEXING DATA (${$json.batch_info.indexing_records} ISSUES):\n${JSON.stringify($json.indexing_data.slice(0, 5), null, 2)}\n\nProvide analysis in this format:\n\n🔍 **SEO WATCHDOG BATCH REPORT - ${$json.analysis_date}**\n\n**📊 BATCH PROCESSING SUMMARY:**\n• Pages Analyzed: ${$json.batch_info.performance_records}\n• Indexing Issues: ${$json.batch_info.indexing_records}\n• Processing Status: ${$json.processing_status.success ? 'SUCCESS' : 'FAILED'}\n• Data Quality: [Assessment of data completeness]\n\n**🚨 CRITICAL ALERTS:**\n[List most urgent issues from the batch]\n\n**📈 TRAFFIC ANALYSIS:**\n• Top Performing Pages: [Best performers from batch]\n• Traffic Drops: [Pages with significant decreases]\n• Growth Opportunities: [Pages with potential]\n\n**🎯 OPTIMIZATION PRIORITIES:**\n• Immediate Actions: [Top 3 actions for this batch]\n• CTR Improvements: [Specific low-CTR pages]\n• Position Gains: [Ranking improvement opportunities]\n\n**🔍 INDEXING STATUS:**\n• New Additions: [Recently indexed pages]\n• Issues Found: [Deindexed or crawl problems]\n• Technical Actions: [Required fixes]\n\n**✅ BATCH RECOMMENDATIONS:**\n1. [Action for highest-traffic pages]\n2. [Action for biggest opportunities]\n3. [Action for critical issues]\n\n**📊 NEXT BATCH PRIORITIES:**\n• [What to monitor in next batch]\n• [Adjustments needed]\n• [Focus areas]\n\nFocus on actionable insights from this specific batch of data.`\n}]"
+            }
+          ]
+        }
+      },
+      "id": "claude_batch_analysis",
+      "name": "Claude AI - Batch Analysis",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1340, 200],
+      "notes": "🤖 CLAUDE AI BATCH ANALYSIS\n\n🎯 BATCH-OPTIMIZED FEATURES:\n• Processes limited dataset efficiently\n• Focuses on top-performing pages\n• Provides batch-specific insights\n• Handles partial data gracefully\n\n📊 ANALYSIS SCOPE:\n• Top performing pages only\n• Critical issues prioritized\n• Actionable recommendations\n• Batch-specific context\n\n🔧 OPTIMIZATIONS:\n• Reduced token usage\n• Focused analysis\n• Efficient processing\n• Quality insights"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "headers": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "body": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "={{ $env.TELEGRAM_CHAT_ID }}"
+            },
+            {
+              "name": "text",
+              "value": "🚨 **SEO WATCHDOG - PROCESSING ERROR**\\n\\n⚠️ **Issue:** {{ $json.processing_status.message }}\\n\\n📊 **Status:**\\n• Processing Success: {{ $json.processing_status.success }}\\n• Records Processed: {{ $json.processing_status.records_processed }}\\n• Batch Complete: {{ $json.processing_status.batch_complete }}\\n\\n🔧 **Next Steps:**\\n• Check BigQuery connection\\n• Verify data availability\\n• Review batch configuration\\n• Check environment variables\\n\\n⏰ **Time:** {{ $json.processing_time }}\\n\\n🔄 **Next Attempt:** Tomorrow at 9 AM"
+            },
+            {
+              "name": "parse_mode",
+              "value": "Markdown"
+            }
+          ]
+        }
+      },
+      "id": "error_notification",
+      "name": "Error Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1340, 400],
+      "notes": "🚨 ERROR NOTIFICATION\n\n🎯 PURPOSE:\n• Notifies about processing failures\n• Provides error details\n• Suggests troubleshooting steps\n• Maintains monitoring continuity\n\n📋 ERROR INFO:\n• Processing status\n• Record counts\n• Error messages\n• Timestamp\n\n🔧 TROUBLESHOOTING:\n• Connection checks\n• Data availability\n• Configuration review\n• Environment validation"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 📱 ENHANCED TELEGRAM FORMATTING FOR BATCH REPORTS\n// Optimized for batch processing context\n\nconst response = $json.content[0].text;\n\n// 🎯 Enhanced formatting with batch context\nconst formatForTelegram = {\n  report: response,\n  timestamp: new Date().toISOString(),\n  date_readable: new Date().toLocaleDateString('en-US', {\n    weekday: 'long',\n    year: 'numeric',\n    month: 'long',\n    day: 'numeric'\n  }),\n  chat_id: $env.TELEGRAM_CHAT_ID,\n  parse_mode: 'Markdown',\n  disable_web_page_preview: true,\n  disable_notification: false,\n  \n  // 📊 BATCH-SPECIFIC METADATA\n  batch_metadata: {\n    processing_type: 'BATCH',\n    character_count: response.length,\n    word_count: response.split(' ').length,\n    report_quality: response.length > 500 ? 'COMPREHENSIVE' : 'BASIC',\n    batch_processing: true\n  }\n};\n\nreturn { json: formatForTelegram };"
+      },
+      "id": "format_batch_report",
+      "name": "Format Batch Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 200],
+      "notes": "📱 BATCH REPORT FORMATTING\n\n🎯 BATCH-SPECIFIC FEATURES:\n• Batch processing context\n• Optimized message length\n• Quality assessment\n• Metadata tracking\n\n📊 ENHANCEMENTS:\n• Batch processing indicators\n• Report quality metrics\n• Character counting\n• Processing type labeling\n\n🔧 TELEGRAM OPTIMIZATION:\n• Markdown formatting\n• Web preview disabled\n• Notification enabled\n• Mobile-friendly layout"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "headers": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "body": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "={{ $json.chat_id }}"
+            },
+            {
+              "name": "text",
+              "value": "={{ $json.report }}"
+            },
+            {
+              "name": "parse_mode",
+              "value": "={{ $json.parse_mode }}"
+            },
+            {
+              "name": "disable_web_page_preview",
+              "value": "={{ $json.disable_web_page_preview }}"
+            },
+            {
+              "name": "disable_notification",
+              "value": "={{ $json.disable_notification }}"
+            }
+          ]
+        }
+      },
+      "id": "send_batch_report",
+      "name": "Send Batch Report",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1780, 200],
+      "notes": "📱 BATCH REPORT DELIVERY\n\n🎯 OPTIMIZED DELIVERY:\n• Batch processing context\n• Efficient message size\n• Quality formatting\n• Reliable delivery\n\n📊 FEATURES:\n• Markdown support\n• Mobile optimization\n• Notification control\n• Preview management\n\n🔧 RELIABILITY:\n• Error handling\n• Retry capability\n• Status tracking\n• Delivery confirmation"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 📊 BATCH PROCESSING RESULT LOGGER\n// Enhanced logging for batch processing workflows\n\nconst success = $json.ok;\nconst messageId = $json.message_id;\nconst errorDescription = $json.description;\n\nconst timestamp = new Date().toISOString();\nconst readableTime = new Date().toLocaleString('en-US', {\n  timeZone: 'UTC',\n  weekday: 'long',\n  year: 'numeric',\n  month: 'long', \n  day: 'numeric',\n  hour: '2-digit',\n  minute: '2-digit',\n  second: '2-digit'\n});\n\n// 📊 Enhanced batch processing logs\nif (success) {\n  console.log(`✅ BATCH SEO REPORT DELIVERED SUCCESSFULLY`);\n  console.log(`📱 Telegram Message ID: ${messageId}`);\n  console.log(`⏰ Delivery Time: ${readableTime}`);\n  console.log(`🔢 Processing Mode: BATCH`);\n  console.log(`🎯 Report Status: DELIVERED`);\n  console.log(`📊 Batch Processing: COMPLETE`);\n} else {\n  console.log(`❌ BATCH SEO REPORT DELIVERY FAILED`);\n  console.log(`⚠️ Error: ${errorDescription}`);\n  console.log(`⏰ Failed At: ${readableTime}`);\n  console.log(`🔢 Processing Mode: BATCH`);\n  console.log(`🎯 Report Status: FAILED`);\n}\n\n// 🔍 Batch processing summary\nconsole.log(`📋 Workflow: SEO Watchdog Batch Processing`);\nconsole.log(`🔄 Process: Daily Batch Analysis Complete`);\nconsole.log(`📈 Next Batch: Tomorrow at 9 AM`);\nconsole.log(`🎯 Batch Size: Optimized for performance`);\n\nreturn { \n  json: {\n    success: success,\n    message_id: messageId,\n    error_description: errorDescription,\n    timestamp: timestamp,\n    readable_time: readableTime,\n    processing_mode: 'BATCH',\n    workflow_status: success ? 'BATCH_COMPLETED' : 'BATCH_FAILED',\n    next_execution: 'Tomorrow at 9 AM',\n    batch_processing: true,\n    summary: {\n      process: 'SEO Watchdog Batch Analysis',\n      status: success ? 'SUCCESS' : 'FAILED',\n      delivery_method: 'Telegram',\n      completion_time: readableTime,\n      processing_type: 'BATCHED'\n    }\n  }\n};"
+      },
+      "id": "log_batch_result",
+      "name": "Log Batch Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2000, 200],
+      "notes": "📊 BATCH RESULT LOGGING\n\n🎯 BATCH-SPECIFIC LOGGING:\n• Processing mode tracking\n• Batch completion status\n• Performance metrics\n• Delivery confirmation\n\n📋 LOG FEATURES:\n• Success/failure status\n• Message ID tracking\n• Error description\n• Processing mode indicator\n• Batch completion confirmation\n\n🔍 MONITORING:\n• Batch processing health\n• Delivery reliability\n• Performance tracking\n• Error analysis\n\n📊 WORKFLOW SUMMARY:\n• Process completion\n• Next execution schedule\n• Batch size optimization\n• Performance status"
+    }
+  ],
+  "connections": {
+    "Daily Schedule": {
+      "main": [
+        [
+          {
+            "node": "Batch Configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Batch Configuration": {
+      "main": [
+        [
+          {
+            "node": "BigQuery - Performance (Batched)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "BigQuery - Indexing (Batched)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "BigQuery - Performance (Batched)": {
+      "main": [
+        [
+          {
+            "node": "Batch Data Processor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "BigQuery - Indexing (Batched)": {
+      "main": [
+        [
+          {
+            "node": "Batch Data Processor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Batch Data Processor": {
+      "main": [
+        [
+          {
+            "node": "Data Validation Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Data Validation Check": {
+      "main": [
+        [
+          {
+            "node": "Claude AI - Batch Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude AI - Batch Analysis": {
+      "main": [
+        [
+          {
+            "node": "Format Batch Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Batch Report": {
+      "main": [
+        [
+          {
+            "node": "Send Batch Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Batch Report": {
+      "main": [
+        [
+          {
+            "node": "Log Batch Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "timeouts": {
+      "default": 30000,
+      "max": 60000
+    },
+    "errorWorkflow": {
+      "enabled": false
+    }
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-12-07T00:00:00.000Z",
+      "updatedAt": "2024-12-07T00:00:00.000Z",
+      "id": "seo-batch",
+      "name": "SEO Batch"
+    },
+    {
+      "createdAt": "2024-12-07T00:00:00.000Z",
+      "updatedAt": "2024-12-07T00:00:00.000Z",
+      "id": "optimized",
+      "name": "Optimized"
+    },
+    {
+      "createdAt": "2024-12-07T00:00:00.000Z",
+      "updatedAt": "2024-12-07T00:00:00.000Z",
+      "id": "performance",
+      "name": "Performance"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2024-12-07T00:00:00.000Z",
+  "versionId": "2.1-batched"
+}

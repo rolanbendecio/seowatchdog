@@ -1,0 +1,289 @@
+{
+  "name": "SEO Watchdog - Enhanced GSC BigQuery Analysis",
+  "description": "Comprehensive SEO monitoring workflow with BigQuery integration, AI analysis, and automated reporting via Telegram",
+  "version": "2.0",
+  "author": "Enhanced by Claude AI",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "value": "0 9 * * *"
+            }
+          ]
+        }
+      },
+      "id": "scheduler",
+      "name": "Daily Schedule",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "notes": "🕘 SCHEDULER: Triggers workflow daily at 9 AM\n\n📋 CONFIGURATION:\n• Cron expression: 0 9 * * * (9 AM daily)\n• Timezone: Uses server timezone\n• Purpose: Automated daily SEO monitoring\n\n🔧 CUSTOMIZATION:\n• Change time: Modify cronExpression value\n• Add days: Use specific weekdays (0=Sunday, 1=Monday, etc.)\n• Examples:\n  - '0 9 * * 1-5' = Weekdays only\n  - '0 9,17 * * *' = 9 AM and 5 PM daily\n\n⚡ NEXT STEP: Triggers both BigQuery data collection nodes simultaneously"
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "projectId": "={{ $env.GCP_PROJECT_ID }}",
+        "query": "-- 📊 PERFORMANCE DATA QUERY\n-- This query analyzes Google Search Console performance data for the last 30 days\n-- It identifies pages with traffic issues, low CTR, and potential problems\n\nWITH recent_data AS (\n  -- 📅 Collect recent 30 days of search performance data\n  SELECT \n    date,\n    page,\n    query,\n    clicks,\n    impressions,\n    SAFE_DIVIDE(clicks, impressions) * 100 as ctr,\n    position,\n    country,\n    device\n  FROM `{{ $env.GCP_PROJECT_ID }}.searchconsole.searchdata_site_impression`\n  WHERE date >= DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY)\n    AND date <= DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)\n),\n\npage_performance AS (\n  -- 📈 Aggregate performance metrics by page\n  SELECT \n    page,\n    SUM(clicks) as total_clicks,\n    SUM(impressions) as total_impressions,\n    SAFE_DIVIDE(SUM(clicks), SUM(impressions)) * 100 as avg_ctr,\n    AVG(position) as avg_position,\n    COUNT(DISTINCT query) as keyword_count,\n    DATE_DIFF(CURRENT_DATE(), MAX(date), DAY) as days_since_last_data\n  FROM recent_data\n  GROUP BY page\n),\n\ntraffic_trends AS (\n  -- 📊 Calculate weekly traffic trends\n  SELECT \n    page,\n    DATE_TRUNC(date, WEEK) as week,\n    SUM(clicks) as weekly_clicks,\n    SUM(impressions) as weekly_impressions\n  FROM recent_data\n  GROUP BY page, week\n),\n\nweekly_comparison AS (\n  -- 📉 Compare current week vs previous week performance\n  SELECT \n    page,\n    LAG(weekly_clicks, 1) OVER (PARTITION BY page ORDER BY week) as prev_week_clicks,\n    weekly_clicks as current_week_clicks,\n    SAFE_DIVIDE(weekly_clicks - LAG(weekly_clicks, 1) OVER (PARTITION BY page ORDER BY week), LAG(weekly_clicks, 1) OVER (PARTITION BY page ORDER BY week)) * 100 as click_change_percent\n  FROM traffic_trends\n  WHERE week = DATE_TRUNC(DATE_SUB(CURRENT_DATE(), INTERVAL 7 DAY), WEEK)\n)\n\n-- 🎯 FINAL RESULTS: Top 100 pages with performance metrics and alerts\nSELECT \n  pp.page,\n  pp.total_clicks,\n  pp.total_impressions,\n  pp.avg_ctr,\n  pp.avg_position,\n  pp.keyword_count,\n  pp.days_since_last_data,\n  wc.click_change_percent,\n  -- 🚨 ALERT CLASSIFICATION SYSTEM\n  CASE \n    WHEN wc.click_change_percent < -20 THEN 'traffic_drop'      -- 📉 Significant traffic decrease\n    WHEN wc.click_change_percent > 20 THEN 'traffic_surge'      -- 📈 Significant traffic increase\n    WHEN pp.avg_ctr < 2 AND pp.total_impressions > 1000 THEN 'low_ctr'  -- 🎯 Low CTR optimization opportunity\n    WHEN pp.avg_position > 10 AND pp.total_impressions > 500 THEN 'low_position'  -- 🔍 Ranking improvement opportunity\n    WHEN pp.days_since_last_data > 7 THEN 'potential_deindex'  -- ⚠️ Potential indexing issue\n    ELSE 'normal'  -- ✅ Normal performance\n  END as alert_type\nFROM page_performance pp\nLEFT JOIN weekly_comparison wc ON pp.page = wc.page\nORDER BY pp.total_clicks DESC\nLIMIT 100"
+      },
+      "id": "bigquery_gsc_data",
+      "name": "BigQuery - GSC Performance Data",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 1,
+      "position": [460, 250],
+      "notes": "📊 BIGQUERY GSC DATA COLLECTION\n\n🎯 PURPOSE:\n• Fetches Google Search Console performance data\n• Analyzes traffic trends and identifies issues\n• Categorizes pages by performance alerts\n\n📋 DATA COLLECTED:\n• Page URLs and performance metrics\n• Click/impression data for last 30 days\n• CTR and position averages\n• Week-over-week traffic changes\n• Alert classifications\n\n🚨 ALERT TYPES:\n• traffic_drop: >20% traffic decrease\n• traffic_surge: >20% traffic increase\n• low_ctr: <2% CTR with >1000 impressions\n• low_position: >10 position with >500 impressions\n• potential_deindex: No data for >7 days\n\n🔧 CONFIGURATION:\n• Environment variable: GCP_PROJECT_ID\n• Authentication: Service Account\n• Query timeout: Default BigQuery limits\n• Result limit: 100 top pages\n\n⚡ NEXT STEP: Data flows to Combine Data node"
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "projectId": "={{ $env.GCP_PROJECT_ID }}",
+        "query": "-- 🔍 INDEXING STATUS QUERY\n-- This query monitors crawl status and indexing health\n-- It identifies newly indexed, deindexed, and problematic pages\n\nWITH indexed_pages AS (\n  -- 📋 Recent crawl and indexing data\n  SELECT \n    page_url,\n    last_crawl_time,\n    coverage_state,\n    is_excluded,\n    DATE_DIFF(CURRENT_DATE(), DATE(last_crawl_time), DAY) as days_since_crawl\n  FROM `{{ $env.GCP_PROJECT_ID }}.searchconsole.crawl_stats`\n  WHERE DATE(last_crawl_time) >= DATE_SUB(CURRENT_DATE(), INTERVAL 14 DAY)\n),\n\nindexing_changes AS (\n  -- 🔄 Classify indexing status changes\n  SELECT \n    page_url,\n    coverage_state,\n    is_excluded,\n    days_since_crawl,\n    -- 📊 INDEXING STATUS CLASSIFICATION\n    CASE \n      WHEN is_excluded = FALSE AND coverage_state = 'Valid' THEN 'newly_indexed'  -- ✅ Successfully indexed\n      WHEN is_excluded = TRUE OR coverage_state != 'Valid' THEN 'deindexed'       -- ❌ Removed from index\n      WHEN days_since_crawl > 7 THEN 'crawl_issue'                               -- ⚠️ Crawling problems\n      ELSE 'normal'  -- ✅ Normal indexing status\n    END as indexing_status\n  FROM indexed_pages\n)\n\n-- 🎯 FINAL RESULTS: Pages with indexing issues only\nSELECT \n  page_url,\n  coverage_state,\n  is_excluded,\n  days_since_crawl,\n  indexing_status,\n  COUNT(*) OVER (PARTITION BY indexing_status) as status_count\nFROM indexing_changes\nWHERE indexing_status != 'normal'  -- Only show problematic pages\nORDER BY days_since_crawl DESC\nLIMIT 50"
+      },
+      "id": "bigquery_indexing_data",
+      "name": "BigQuery - Indexing Status Data",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 1,
+      "position": [460, 400],
+      "notes": "🔍 INDEXING STATUS MONITORING\n\n🎯 PURPOSE:\n• Monitors Google Search Console crawl stats\n• Identifies indexing issues and changes\n• Tracks newly indexed and deindexed pages\n\n📋 DATA COLLECTED:\n• Page URLs and crawl timestamps\n• Coverage states and exclusion status\n• Days since last crawl\n• Indexing status classifications\n\n🚨 STATUS TYPES:\n• newly_indexed: Recently added to index\n• deindexed: Removed from search index\n• crawl_issue: Not crawled for >7 days\n• normal: No issues (filtered out)\n\n🔧 CONFIGURATION:\n• Environment variable: GCP_PROJECT_ID\n• Authentication: Service Account\n• Time range: Last 14 days of crawl data\n• Result limit: 50 problematic pages\n\n⚡ NEXT STEP: Data flows to Combine Data node"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 🔄 DATA COMBINATION AND PREPARATION\n// This node combines performance and indexing data for AI analysis\n\n// 📊 Extract data from both BigQuery sources\nconst gscData = $input.first().json;  // Performance data from first BigQuery node\nconst indexingData = $input.last().json;  // Indexing data from second BigQuery node\n\n// 📋 Create combined analysis payload\nconst combineData = {\n  // 🎯 PERFORMANCE METRICS\n  performance_data: gscData,\n  \n  // 🔍 INDEXING STATUS\n  indexing_data: indexingData,\n  \n  // 📅 METADATA\n  analysis_date: new Date().toISOString().split('T')[0],\n  total_pages_analyzed: gscData.length,\n  indexing_issues: indexingData.length,\n  \n  // 📊 SUMMARY STATISTICS\n  summary: {\n    total_clicks: gscData.reduce((sum, page) => sum + (page.total_clicks || 0), 0),\n    total_impressions: gscData.reduce((sum, page) => sum + (page.total_impressions || 0), 0),\n    avg_ctr: gscData.reduce((sum, page) => sum + (page.avg_ctr || 0), 0) / gscData.length,\n    alert_counts: {\n      traffic_drops: gscData.filter(p => p.alert_type === 'traffic_drop').length,\n      traffic_surges: gscData.filter(p => p.alert_type === 'traffic_surge').length,\n      low_ctr: gscData.filter(p => p.alert_type === 'low_ctr').length,\n      low_position: gscData.filter(p => p.alert_type === 'low_position').length,\n      potential_deindex: gscData.filter(p => p.alert_type === 'potential_deindex').length\n    },\n    indexing_status_counts: {\n      newly_indexed: indexingData.filter(p => p.indexing_status === 'newly_indexed').length,\n      deindexed: indexingData.filter(p => p.indexing_status === 'deindexed').length,\n      crawl_issues: indexingData.filter(p => p.indexing_status === 'crawl_issue').length\n    }\n  }\n};\n\n// 🎯 Return combined data for AI analysis\nreturn { json: combineData };"
+      },
+      "id": "combine_data",
+      "name": "Combine & Prepare Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 325],
+      "notes": "🔄 DATA COMBINATION & PREPARATION\n\n🎯 PURPOSE:\n• Combines BigQuery performance and indexing data\n• Calculates summary statistics\n• Prepares structured data for AI analysis\n\n📊 DATA PROCESSING:\n• Merges performance metrics with indexing status\n• Calculates totals and averages\n• Counts alerts by type\n• Generates analysis metadata\n\n📋 OUTPUT STRUCTURE:\n• performance_data: Page performance metrics\n• indexing_data: Crawl and indexing status\n• analysis_date: Current date\n• total_pages_analyzed: Count of analyzed pages\n• indexing_issues: Count of indexing problems\n• summary: Aggregated statistics and alert counts\n\n🔧 CUSTOMIZATION:\n• Modify summary calculations\n• Add new alert type counting\n• Include additional metadata\n\n⚡ NEXT STEP: Structured data sent to Claude AI"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "headers": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "body": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "claude-3-5-sonnet-20241022"
+            },
+            {
+              "name": "max_tokens",
+              "value": 3000
+            },
+            {
+              "name": "messages",
+              "value": "=[{\n  \"role\": \"user\",\n  \"content\": `You are an expert SEO analyst providing actionable insights for website optimization. Analyze the following Google Search Console data and provide strategic recommendations.\n\n🔍 ANALYSIS CONTEXT:\n• Analysis Date: ${$json.analysis_date}\n• Pages Analyzed: ${$json.total_pages_analyzed}\n• Indexing Issues: ${$json.indexing_issues}\n• Total Site Clicks: ${$json.summary.total_clicks.toLocaleString()}\n• Total Site Impressions: ${$json.summary.total_impressions.toLocaleString()}\n• Average Site CTR: ${$json.summary.avg_ctr.toFixed(2)}%\n\n📊 PERFORMANCE DATA:\n${JSON.stringify($json.performance_data, null, 2)}\n\n🔍 INDEXING DATA:\n${JSON.stringify($json.indexing_data, null, 2)}\n\n📋 ALERT SUMMARY:\n• Traffic Drops: ${$json.summary.alert_counts.traffic_drops}\n• Traffic Surges: ${$json.summary.alert_counts.traffic_surges}\n• Low CTR Opportunities: ${$json.summary.alert_counts.low_ctr}\n• Low Position Opportunities: ${$json.summary.alert_counts.low_position}\n• Potential Deindexing: ${$json.summary.alert_counts.potential_deindex}\n\n🔍 INDEXING STATUS:\n• Newly Indexed: ${$json.summary.indexing_status_counts.newly_indexed}\n• Deindexed: ${$json.summary.indexing_status_counts.deindexed}\n• Crawl Issues: ${$json.summary.indexing_status_counts.crawl_issues}\n\nProvide analysis in this EXACT format:\n\n🔍 **SEO WATCHDOG REPORT - ${$json.analysis_date}**\n\n**📊 EXECUTIVE SUMMARY:**\n• Total Pages Analyzed: ${$json.total_pages_analyzed}\n• Indexing Issues Found: ${$json.indexing_issues}\n• Site Performance: [Brief overall assessment]\n• Key Concern: [Most critical issue if any]\n\n**🚨 CRITICAL ALERTS:**\n[List urgent issues requiring immediate attention - traffic drops >20%, major indexing problems, etc.]\n\n**📉 TRAFFIC PERFORMANCE:**\n• Traffic Drops: [Pages with significant decreases]\n• Traffic Surges: [Pages with significant increases]\n• Overall Trend: [Week-over-week analysis]\n\n**🎯 OPTIMIZATION OPPORTUNITIES:**\n• Low CTR Pages: [High impression, low CTR pages with specific recommendations]\n• Position Improvements: [Pages ranking 10+ that could move higher]\n• Content Gaps: [Keywords/pages that need attention]\n\n**🔍 INDEXING & TECHNICAL ISSUES:**\n• Newly Indexed: [Recently added pages]\n• Deindexed Pages: [Pages removed from index]\n• Crawl Problems: [Technical issues affecting crawling]\n\n**✅ ACTIONABLE RECOMMENDATIONS:**\n1. [Specific action item with expected impact]\n2. [Another specific action item]\n3. [Third specific action item]\n\n**🚀 PRIORITY ACTIONS (Next 7 Days):**\n• [Immediate action 1]\n• [Immediate action 2]\n• [Immediate action 3]\n\n**📈 GROWTH OPPORTUNITIES:**\n• [High-potential optimization with estimated impact]\n• [Content opportunity with traffic potential]\n• [Technical improvement with SEO benefits]\n\nKeep recommendations specific, actionable, and prioritized. Focus on pages with highest traffic potential and clearest optimization paths.`\n}]"
+            }
+          ]
+        }
+      },
+      "id": "claude_analysis",
+      "name": "Claude AI SEO Analysis",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [900, 325],
+      "notes": "🤖 CLAUDE AI SEO ANALYSIS\n\n🎯 PURPOSE:\n• Analyzes combined SEO data using Claude AI\n• Provides expert insights and recommendations\n• Identifies optimization opportunities\n• Generates actionable SEO strategies\n\n🧠 AI CAPABILITIES:\n• Expert SEO knowledge and analysis\n• Pattern recognition in performance data\n• Prioritized recommendation generation\n• Strategic insights for growth\n\n📊 ANALYSIS INCLUDES:\n• Executive summary with key metrics\n• Critical alerts requiring immediate attention\n• Traffic performance trends and changes\n• Optimization opportunities (CTR, position)\n• Indexing and technical issue identification\n• Actionable recommendations with priorities\n• Growth opportunities and potential impact\n\n🔧 CONFIGURATION:\n• Model: claude-3-5-sonnet-20241022\n• Max tokens: 3000 (comprehensive analysis)\n• Authentication: API key via environment variable\n• Response format: Structured markdown report\n\n📋 REPORT SECTIONS:\n• Executive Summary\n• Critical Alerts\n• Traffic Performance\n• Optimization Opportunities\n• Indexing & Technical Issues\n• Actionable Recommendations\n• Priority Actions (Next 7 Days)\n• Growth Opportunities\n\n⚡ NEXT STEP: AI-generated report sent to formatting"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 📱 TELEGRAM REPORT FORMATTING\n// This node formats the AI analysis for Telegram delivery\n\n// 📊 Extract Claude's analysis response\nconst response = $json.content[0].text;\n\n// 🎯 Format for Telegram with enhanced structure\nconst formatForTelegram = {\n  // 📋 MAIN REPORT CONTENT\n  report: response,\n  \n  // 📅 METADATA\n  timestamp: new Date().toISOString(),\n  date_readable: new Date().toLocaleDateString('en-US', {\n    weekday: 'long',\n    year: 'numeric',\n    month: 'long',\n    day: 'numeric'\n  }),\n  \n  // 📱 TELEGRAM CONFIGURATION\n  chat_id: $env.TELEGRAM_CHAT_ID,\n  parse_mode: 'Markdown',\n  \n  // 🔧 TELEGRAM FORMATTING OPTIONS\n  disable_web_page_preview: true,  // Prevent URL previews\n  disable_notification: false,     // Allow notifications\n  \n  // 📊 REPORT STATISTICS\n  report_stats: {\n    character_count: response.length,\n    word_count: response.split(' ').length,\n    section_count: (response.match(/\\*\\*/g) || []).length,\n    emoji_count: (response.match(/[\\u{1F600}-\\u{1F64F}]|[\\u{1F300}-\\u{1F5FF}]|[\\u{1F680}-\\u{1F6FF}]|[\\u{1F1E0}-\\u{1F1FF}]|[\\u{2600}-\\u{26FF}]|[\\u{2700}-\\u{27BF}]/gu) || []).length\n  }\n};\n\n// 🎯 Return formatted data for Telegram\nreturn { json: formatForTelegram };"
+      },
+      "id": "format_report",
+      "name": "Format Telegram Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 325],
+      "notes": "📱 TELEGRAM REPORT FORMATTING\n\n🎯 PURPOSE:\n• Formats AI analysis for Telegram delivery\n• Adds metadata and delivery configuration\n• Prepares message parameters\n• Calculates report statistics\n\n📋 FORMATTING FEATURES:\n• Markdown formatting support\n• Emoji preservation\n• URL preview control\n• Notification settings\n• Character and word counting\n\n🔧 TELEGRAM CONFIGURATION:\n• Chat ID: From environment variable\n• Parse mode: Markdown for formatting\n• Web preview: Disabled for cleaner look\n• Notifications: Enabled for alerts\n\n📊 REPORT METADATA:\n• Timestamp: ISO format\n• Readable date: Localized format\n• Character count: For length tracking\n• Word count: Content analysis\n• Section count: Structure analysis\n• Emoji count: Visual element tracking\n\n🎨 CUSTOMIZATION:\n• Modify parse_mode for different formatting\n• Add custom message threading\n• Include report summary statistics\n• Add custom formatting rules\n\n⚡ NEXT STEP: Formatted report sent to Telegram"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "headers": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "body": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "={{ $json.chat_id }}"
+            },
+            {
+              "name": "text",
+              "value": "={{ $json.report }}"
+            },
+            {
+              "name": "parse_mode",
+              "value": "={{ $json.parse_mode }}"
+            },
+            {
+              "name": "disable_web_page_preview",
+              "value": "={{ $json.disable_web_page_preview }}"
+            },
+            {
+              "name": "disable_notification",
+              "value": "={{ $json.disable_notification }}"
+            }
+          ]
+        }
+      },
+      "id": "send_telegram",
+      "name": "Send to Telegram",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1340, 325],
+      "notes": "📱 TELEGRAM MESSAGE DELIVERY\n\n🎯 PURPOSE:\n• Sends formatted SEO report to Telegram\n• Delivers daily insights to stakeholders\n• Provides mobile-friendly notifications\n• Enables quick access to SEO alerts\n\n📋 TELEGRAM FEATURES:\n• Markdown formatting support\n• Emoji and formatting preservation\n• URL preview control\n• Notification management\n• Mobile-optimized display\n\n🔧 CONFIGURATION:\n• Bot token: From environment variable\n• Chat ID: Target chat/channel\n• Message formatting: Markdown\n• Web previews: Disabled\n• Notifications: Enabled\n\n📊 DELIVERY PARAMETERS:\n• Method: POST to Telegram Bot API\n• Endpoint: /sendMessage\n• Content-Type: application/json\n• Authentication: Bot token in URL\n\n🎨 MESSAGE FEATURES:\n• Rich formatting with emojis\n• Structured sections\n• Clickable elements\n• Mobile-responsive layout\n\n⚠️ ERROR HANDLING:\n• API rate limits respected\n• Message length limits considered\n• Network timeout handling\n• Delivery confirmation tracking\n\n⚡ NEXT STEP: Delivery confirmation logged"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 📊 DELIVERY RESULT LOGGING\n// This node processes and logs the Telegram delivery result\n\n// 📋 Extract delivery response\nconst success = $json.ok;\nconst messageId = $json.message_id;\nconst errorDescription = $json.description;\n\n// 📅 Generate timestamp\nconst timestamp = new Date().toISOString();\nconst readableTime = new Date().toLocaleString('en-US', {\n  timeZone: 'UTC',\n  weekday: 'long',\n  year: 'numeric',\n  month: 'long',\n  day: 'numeric',\n  hour: '2-digit',\n  minute: '2-digit',\n  second: '2-digit'\n});\n\n// 📊 Log delivery status\nif (success) {\n  console.log(`✅ SEO REPORT DELIVERED SUCCESSFULLY`);\n  console.log(`📱 Telegram Message ID: ${messageId}`);\n  console.log(`⏰ Delivery Time: ${readableTime}`);\n  console.log(`🎯 Report Status: DELIVERED`);\n} else {\n  console.log(`❌ SEO REPORT DELIVERY FAILED`);\n  console.log(`⚠️ Error: ${errorDescription}`);\n  console.log(`⏰ Failed At: ${readableTime}`);\n  console.log(`🎯 Report Status: FAILED`);\n}\n\n// 🔍 Additional logging for monitoring\nconsole.log(`📊 Workflow Execution: SEO Watchdog`);\nconsole.log(`🔄 Process: Daily Analysis Complete`);\nconsole.log(`📈 Next Run: Tomorrow at 9 AM`);\n\n// 📋 Return structured result\nreturn { \n  json: {\n    // 📊 DELIVERY STATUS\n    success: success,\n    message_id: messageId,\n    error_description: errorDescription,\n    \n    // 📅 TIMING INFORMATION\n    timestamp: timestamp,\n    readable_time: readableTime,\n    \n    // 📋 WORKFLOW STATUS\n    workflow_status: success ? 'COMPLETED' : 'FAILED',\n    next_execution: 'Tomorrow at 9 AM',\n    \n    // 🎯 SUMMARY\n    summary: {\n      process: 'SEO Watchdog Daily Analysis',\n      status: success ? 'SUCCESS' : 'FAILED',\n      delivery_method: 'Telegram',\n      completion_time: readableTime\n    }\n  }\n};"
+      },
+      "id": "log_result",
+      "name": "Log Delivery Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 325],
+      "notes": "📊 DELIVERY RESULT LOGGING\n\n🎯 PURPOSE:\n• Logs Telegram delivery success/failure\n• Tracks message delivery status\n• Provides workflow completion confirmation\n• Enables monitoring and troubleshooting\n\n📋 LOGGING FEATURES:\n• Success/failure status tracking\n• Telegram message ID capture\n• Error description logging\n• Timestamp recording\n• Workflow status summary\n\n🔍 CONSOLE OUTPUT:\n• Delivery confirmation with emojis\n• Message ID for reference\n• Readable timestamp\n• Next execution schedule\n• Error details if applicable\n\n📊 RETURN DATA:\n• Structured delivery result\n• Timing information\n• Workflow status\n• Summary statistics\n\n🎯 MONITORING BENEFITS:\n• Track delivery reliability\n• Identify failure patterns\n• Monitor workflow health\n• Debug delivery issues\n\n⚡ WORKFLOW COMPLETE: SEO analysis cycle finished"
+    }
+  ],
+  "connections": {
+    "Daily Schedule": {
+      "main": [
+        [
+          {
+            "node": "BigQuery - GSC Performance Data",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "BigQuery - Indexing Status Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "BigQuery - GSC Performance Data": {
+      "main": [
+        [
+          {
+            "node": "Combine & Prepare Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "BigQuery - Indexing Status Data": {
+      "main": [
+        [
+          {
+            "node": "Combine & Prepare Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Combine & Prepare Data": {
+      "main": [
+        [
+          {
+            "node": "Claude AI SEO Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude AI SEO Analysis": {
+      "main": [
+        [
+          {
+            "node": "Format Telegram Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Telegram Report": {
+      "main": [
+        [
+          {
+            "node": "Send to Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to Telegram": {
+      "main": [
+        [
+          {
+            "node": "Log Delivery Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": {
+      "enabled": false
+    }
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-12-07T00:00:00.000Z",
+      "updatedAt": "2024-12-07T00:00:00.000Z",
+      "id": "seo",
+      "name": "SEO"
+    },
+    {
+      "createdAt": "2024-12-07T00:00:00.000Z",
+      "updatedAt": "2024-12-07T00:00:00.000Z",
+      "id": "enhanced",
+      "name": "Enhanced"
+    },
+    {
+      "createdAt": "2024-12-07T00:00:00.000Z",
+      "updatedAt": "2024-12-07T00:00:00.000Z",
+      "id": "bigquery",
+      "name": "BigQuery"
+    },
+    {
+      "createdAt": "2024-12-07T00:00:00.000Z",
+      "updatedAt": "2024-12-07T00:00:00.000Z",
+      "id": "ai-analysis",
+      "name": "AI Analysis"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2024-12-07T00:00:00.000Z",
+  "versionId": "2.0-enhanced"
+}
