@@ -1,0 +1,1150 @@
+{
+  "name": "BigQuery",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -280,
+        600
+      ],
+      "id": "8cd0bef9-17c1-488d-ac40-767bffc709b0",
+      "name": "When clicking ‘Test workflow’"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1Whhy0FH0QA4c99kMFlBhkcf9mNucDTK5-cHtFnShcnI",
+          "mode": "list",
+          "cachedResultName": "tracked_keywords",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1Whhy0FH0QA4c99kMFlBhkcf9mNucDTK5-cHtFnShcnI/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "cryptsy.com",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1Whhy0FH0QA4c99kMFlBhkcf9mNucDTK5-cHtFnShcnI/edit#gid=0"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        800,
+        60
+      ],
+      "id": "0726a97e-80ae-4a80-827b-a7b7824f6659",
+      "name": "Get Tracked Keywords",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "fhsy92jJ6vuImMjs",
+          "name": "Google Sheets account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{\n  json: {\n    keywordString: $input.all().map(item => `'${item.json.keywords}'`).join(', ')\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        60
+      ],
+      "id": "864ddf65-ec25-4b6b-bc44-617f39fee1b6",
+      "name": "Code"
+    },
+    {
+      "parameters": {
+        "projectId": {
+          "__rl": true,
+          "value": "gscexportproject",
+          "mode": "list",
+          "cachedResultName": "GSCExportProject",
+          "cachedResultUrl": "https://console.cloud.google.com/bigquery?project=gscexportproject"
+        },
+        "sqlQuery": "WITH daily_metrics AS (\n  SELECT \n    data_date AS date,\n    query AS keyword,\n    url,\n    device,\n    SUM(clicks) AS clicks,\n    SUM(impressions) AS impressions,\n    ROUND(SUM(sum_position) / SUM(impressions), 1) AS position,\n    ROUND(SUM(clicks) / SUM(impressions) * 100, 2) AS ctr\n  FROM `gscexportproject.searchconsole.searchdata_url_impression`\n  WHERE \n    data_date > '{{ $(\"Merge Loop Data\").all()[0].json.date }}'\n    {{ $(\"Merge Loop Data\").all().length > 1 && $(\"Merge Loop Data\").all()[1].json.keywordString \n        ? \"AND lower(query) IN (\" + $(\"Merge Loop Data\").all()[1].json.keywordString + \")\" \n        : \"\" }}\n    AND url NOT LIKE '%#%'\n  GROUP BY date, keyword, url, device\n)\n\nSELECT \n  date,\n  keyword,\n  device,\n  url,\n  clicks,\n  impressions,\n  position,\n  ctr\nFROM daily_metrics\nORDER BY date ASC, keyword, position ASC\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2.1,
+      "position": [
+        1980,
+        40
+      ],
+      "id": "83273355-b25f-409f-8b8d-a58c9d191372",
+      "name": "Get Ranking Keywords by URL",
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleBigQueryOAuth2Api": {
+          "id": "pmsHEmuUgsHIF9wS",
+          "name": "Google BigQuery account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "1e6DHnN7-CdU8WWwRT09B6FNEE9-fREZK29Lhad81lIY",
+          "mode": "list",
+          "cachedResultName": "rank_tracking",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1e6DHnN7-CdU8WWwRT09B6FNEE9-fREZK29Lhad81lIY/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "cryptsy.com",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1e6DHnN7-CdU8WWwRT09B6FNEE9-fREZK29Lhad81lIY/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "date",
+              "displayName": "date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "url",
+              "displayName": "url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "device ",
+              "displayName": "device ",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "keyword",
+              "displayName": "keyword",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "clicks",
+              "displayName": "clicks",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "impressions ",
+              "displayName": "impressions ",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "position",
+              "displayName": "position",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "ctr",
+              "displayName": "ctr",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        2200,
+        40
+      ],
+      "id": "35aeb9ac-21b9-4e1b-b60e-272b04b2b8ee",
+      "name": "Insert URL Rankings",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "fhsy92jJ6vuImMjs",
+          "name": "Google Sheets account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "{\n  \"domains\": [\n    {\n      \"domain\": \"cryptsy.com\",\n      \"searchdata_url_impression\": \"searchdata_url_impression\",\n      \"searchdata_site_impression\": \"searchdata_site_impression\"\n    },\n    {\n      \"domain\": \"domain_2\",\n      \"searchdata_url_impression\": \"searchdata_url_impression\",\n      \"searchdata_site_impression\": \"searchdata_site_impression\"\n    }\n  ]\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -80,
+        600
+      ],
+      "id": "1c73591e-0dcb-44be-a1b5-967d37bad986",
+      "name": "Domains"
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "domains",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        100,
+        600
+      ],
+      "id": "39058c68-7483-47de-ab67-24de6724f530",
+      "name": "Split Out"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        440,
+        -40
+      ],
+      "id": "d49ca540-08ad-4c07-873e-0a1b703d4aa9",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        1800,
+        40
+      ],
+      "id": "50dc513d-7834-4f4b-9250-8f774dcc8ab8",
+      "name": "Merge Loop Data"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1e6DHnN7-CdU8WWwRT09B6FNEE9-fREZK29Lhad81lIY",
+          "mode": "list",
+          "cachedResultName": "rank_tracking",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1e6DHnN7-CdU8WWwRT09B6FNEE9-fREZK29Lhad81lIY/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "cryptsy.com",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1e6DHnN7-CdU8WWwRT09B6FNEE9-fREZK29Lhad81lIY/edit#gid=0"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        800,
+        -100
+      ],
+      "id": "293e45ed-b28b-4110-8217-e825683da878",
+      "name": "Google Sheets",
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "fhsy92jJ6vuImMjs",
+          "name": "Google Sheets account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sortFieldsUi": {
+          "sortField": [
+            {
+              "fieldName": "date"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.sort",
+      "typeVersion": 1,
+      "position": [
+        1280,
+        -180
+      ],
+      "id": "f31b387b-ba98-4e14-bb0e-f49d39c45a51",
+      "name": "Sort"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "1a376642-1bb3-43a3-802f-6844d3b9c2a7",
+              "leftValue": "={{ $('Google Sheets').all()[0].json.isEmpty()}}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1040,
+        -100
+      ],
+      "id": "ef9c2ed9-5deb-4cb8-87a7-d32e14a2ad8c",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "e3ce8bf6-cbee-4949-a338-aeb1523b646a",
+              "name": "=date",
+              "value": "={{ $now.minus({ days: 7 }).format('yyyy-MM-dd') }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1280,
+        0
+      ],
+      "id": "d5e435cc-6039-4718-8cbd-329e5fe16d03",
+      "name": "Set Date",
+      "notes": "In case the pipeline has not been triggered before, then the tracking sheet is empty. If true, we will take as a starting point of today minus 7 days. "
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "4538ac52-c81c-460f-96ce-70ab74f313d9",
+              "name": "date",
+              "value": "={{ $json.date }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1560,
+        -180
+      ],
+      "id": "e81920b9-8455-4bff-8738-56c345f74836",
+      "name": "Get date"
+    },
+    {
+      "parameters": {
+        "keep": "lastItems"
+      },
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        1420,
+        -180
+      ],
+      "id": "fef686db-8281-462e-b200-b2aa20cce86b",
+      "name": "Get latest row"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        440,
+        360
+      ],
+      "id": "ef04b9df-3cd0-4ae8-bdca-1adfa68956b3",
+      "name": "Loop Over Items1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "32ae47a9-f7f5-41fc-b403-468094ba3f41",
+              "leftValue": "={{ $('Get Top Ranking Keywords Date').all()[0].json.isEmpty()}}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        820,
+        460
+      ],
+      "id": "fbbf32f3-9add-44fa-91cd-fdbd5cecc117",
+      "name": "If1"
+    },
+    {
+      "parameters": {
+        "sortFieldsUi": {
+          "sortField": [
+            {
+              "fieldName": "data_date"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.sort",
+      "typeVersion": 1,
+      "position": [
+        1060,
+        320
+      ],
+      "id": "0613e108-a9bb-4e0c-98f1-104b337f98ce",
+      "name": "Sort1"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "4538ac52-c81c-460f-96ce-70ab74f313d9",
+              "name": "date",
+              "value": "={{ $json.data_date }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1380,
+        320
+      ],
+      "id": "de5ba484-98bf-487d-9c37-7ba9f207a9e5",
+      "name": "Get date1"
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "1kdowRS43tUkJjvF2jSjRejI7QlMRjR6Y28akYKXQc-4",
+          "mode": "list",
+          "cachedResultName": "top_ranking_keywords",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1kdowRS43tUkJjvF2jSjRejI7QlMRjR6Y28akYKXQc-4/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "cryptsy.com",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1kdowRS43tUkJjvF2jSjRejI7QlMRjR6Y28akYKXQc-4/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "data_date",
+              "displayName": "data_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "query",
+              "displayName": "query",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "url",
+              "displayName": "url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "device",
+              "displayName": "device",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "result_type",
+              "displayName": "result_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "total_impressions",
+              "displayName": "total_impressions",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "total_clicks",
+              "displayName": "total_clicks",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "avg_position",
+              "displayName": "avg_position",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "ctr_percentage",
+              "displayName": "ctr_percentage",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "position_bucket",
+              "displayName": "position_bucket",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1820,
+        520
+      ],
+      "id": "397133e4-03d9-4ed4-af53-38c00169b03e",
+      "name": "Insert Top Ranking Keywords",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "fhsy92jJ6vuImMjs",
+          "name": "Google Sheets account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1kdowRS43tUkJjvF2jSjRejI7QlMRjR6Y28akYKXQc-4",
+          "mode": "list",
+          "cachedResultName": "top_ranking_keywords",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1kdowRS43tUkJjvF2jSjRejI7QlMRjR6Y28akYKXQc-4/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "cryptsy.com",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1kdowRS43tUkJjvF2jSjRejI7QlMRjR6Y28akYKXQc-4/edit#gid=0"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        660,
+        460
+      ],
+      "id": "fb376111-c89c-44cf-94e6-82f0ec8fdddc",
+      "name": "Get Top Ranking Keywords Date",
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "fhsy92jJ6vuImMjs",
+          "name": "Google Sheets account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "keep": "lastItems"
+      },
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        1220,
+        320
+      ],
+      "id": "ddd5401f-ccaf-4963-b3ba-4f7e868e0dad",
+      "name": "Get last row by date"
+    },
+    {
+      "parameters": {
+        "projectId": {
+          "__rl": true,
+          "value": "gscexportproject",
+          "mode": "list",
+          "cachedResultName": "GSCExportProject",
+          "cachedResultUrl": "https://console.cloud.google.com/bigquery?project=gscexportproject"
+        },
+        "sqlQuery": "WITH filtered_queries AS (\n  SELECT \n    data_date,\n    device,\n    query,\n    url,\n    SUM(clicks) AS clicks,\n    SUM(impressions) AS impressions,\n    SUM(sum_position) AS sum_position,\n    SUM(sum_position) / SUM(impressions) + 1 AS avg_position\n  FROM `gscexportproject.searchconsole.searchdata_url_impression`\n  WHERE SAFE_DIVIDE(sum_position, impressions) <= 50\n    AND impressions >= 5\n    AND data_date > '{{ $json.date }}'\n  GROUP BY data_date, device, query, url\n)\n\nSELECT \n  data_date,\n  query,\n  url,\n  device,\n  impressions AS total_impressions,\n  clicks AS total_clicks,\n  avg_position,\n  SAFE_DIVIDE(clicks, impressions) * 100 AS ctr_percentage,\n  CASE \n    WHEN avg_position <= 3 THEN 'Top 3'\n    WHEN avg_position <= 10 THEN 'Top 10'\n    WHEN avg_position <= 20 THEN 'Top 20'\n    ELSE 'Above 20'\n  END AS position_bucket\nFROM filtered_queries\nORDER BY \n  data_date DESC,\n  url;\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2.1,
+      "position": [
+        1600,
+        520
+      ],
+      "id": "df788aaa-22f8-4315-b475-cdfd9f7175e3",
+      "name": "Get Keyword Opportunities",
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleBigQueryOAuth2Api": {
+          "id": "pmsHEmuUgsHIF9wS",
+          "name": "Google BigQuery account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "e3ce8bf6-cbee-4949-a338-aeb1523b646a",
+              "name": "=date",
+              "value": "={{ $now.minus({ days: 7 }).format('yyyy-MM-dd') }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1060,
+        540
+      ],
+      "id": "33defb8a-7f8a-432e-ab4e-f85764df01eb",
+      "name": "Today - 7d",
+      "notes": "In case the pipeline has not been triggered before, then the tracking sheet is empty. If true, we will take as a starting point of today minus 7 days. "
+    },
+    {
+      "parameters": {
+        "content": "# Keyword Tracking by Keyword List",
+        "height": 480,
+        "width": 2120
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        300,
+        -220
+      ],
+      "id": "3005dbe2-08e7-4914-8882-f7e1d0196b90",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "content": "# Keywords by URL and Top position",
+        "height": 480,
+        "width": 2120
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        300,
+        280
+      ],
+      "id": "91b76cf5-3fd9-4c88-8e52-77bb03b44505",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "content": "# Instructions\n\n## Description\nThis automation enables you to replace expensive SEO Rank Trackers and track any number of keywords for multiple domains.\n\n## Requirements & Setup (~20 minutes)\nTo use this template, you need bulk export enabled for your property connected to Google Search Console. The automation uses a BigQuery table for data processing.\n\nYou'll also need to set up credentials for accessing both BigQuery and Google Sheets.\n\n## Google Spreadsheets\nThis automation requires three spreadsheets:\n1. **Top Ranking Keywords**: Saves queries where you already rank at a decent position. This data helps identify low-hanging fruits.\n   - Columns: data_date, query, url, device, result_type, total_impressions, total_clicks, avg_position, ctr_percentage, position_bucket\n\n2. **Rank Tracking**: Tracks the daily performance of your monitored keywords.\n   - Columns: date, url, device, keyword, clicks, impressions, position, ctr\n\n3. **Tracked Keywords**: Stores all keywords you want to rank for.\n   - Columns: domain, keyword\n",
+        "height": 980,
+        "width": 640
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -360,
+        -220
+      ],
+      "id": "a752d52b-2cd0-483d-b8d0-2d7c358d832c",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "content": "adjust this node if you want to start with more historical data\n",
+        "height": 200,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1040,
+        460
+      ],
+      "id": "2b465425-4875-493c-96c2-f8608343780f",
+      "name": "Sticky Note3"
+    },
+    {
+      "parameters": {
+        "content": "adjust this node if you want to start with more historical data\n",
+        "height": 200,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1240,
+        -60
+      ],
+      "id": "99b213b4-18da-41a1-a4fc-f90e9815e413",
+      "name": "Sticky Note4"
+    },
+    {
+      "parameters": {
+        "content": "add your domains and tables here",
+        "height": 180,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -20,
+        680
+      ],
+      "id": "c847ceb0-56e7-44cb-8917-c36c56e8f25c",
+      "name": "Sticky Note5"
+    }
+  ],
+  "pinData": {
+    "Get Tracked Keywords": [
+      {
+        "json": {
+          "name": "First item",
+          "code": 1
+        }
+      },
+      {
+        "json": {
+          "name": "Second item",
+          "code": 2
+        }
+      }
+    ]
+  },
+  "connections": {
+    "When clicking ‘Test workflow’": {
+      "main": [
+        [
+          {
+            "node": "Domains",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Tracked Keywords": {
+      "main": [
+        [
+          {
+            "node": "Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "Merge Loop Data",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Get Ranking Keywords by URL": {
+      "main": [
+        [
+          {
+            "node": "Insert URL Rankings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert URL Rankings": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Domains": {
+      "main": [
+        [
+          {
+            "node": "Split Out",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Get Tracked Keywords",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Loop Data": {
+      "main": [
+        [
+          {
+            "node": "Get Ranking Keywords by URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sort": {
+      "main": [
+        [
+          {
+            "node": "Get latest row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Sort",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set Date",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Date": {
+      "main": [
+        [
+          {
+            "node": "Merge Loop Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get date": {
+      "main": [
+        [
+          {
+            "node": "Merge Loop Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get latest row": {
+      "main": [
+        [
+          {
+            "node": "Get date",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items1": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Get Top Ranking Keywords Date",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sort1": {
+      "main": [
+        [
+          {
+            "node": "Get last row by date",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If1": {
+      "main": [
+        [
+          {
+            "node": "Sort1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Today - 7d",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Top Ranking Keywords Date": {
+      "main": [
+        [
+          {
+            "node": "If1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get last row by date": {
+      "main": [
+        [
+          {
+            "node": "Get date1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get date1": {
+      "main": [
+        [
+          {
+            "node": "Get Keyword Opportunities",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Top Ranking Keywords": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Keyword Opportunities": {
+      "main": [
+        [
+          {
+            "node": "Insert Top Ranking Keywords",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Today - 7d": {
+      "main": [
+        [
+          {
+            "node": "Get Keyword Opportunities",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "f6c9868b-53b4-44f5-84ec-fcf21ed322b1",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "7befe93d0b3a9d6dc27b43da36b2b00d887efda67bf297bbbfbfce54dcbb542d"
+  },
+  "id": "M29YL7qn9icfxBUY",
+  "tags": [
+    {
+      "createdAt": "2025-06-11T22:07:19.847Z",
+      "updatedAt": "2025-06-11T22:07:19.847Z",
+      "id": "G909nAf4NNCt1RRM",
+      "name": "SEO"
+    },
+    {
+      "createdAt": "2025-06-12T08:40:52.945Z",
+      "updatedAt": "2025-06-12T08:40:52.945Z",
+      "id": "nONrFLPxo78kgJR6",
+      "name": "templates"
+    }
+  ]
+}
